@@ -1,51 +1,54 @@
 from models import ReshapeFeatures, ClassificationModule, EfficientFeatures, CombinedNet
 from efficientnet_pytorch import EfficientNet
 import torchvision.datasets as datasets
-from supervisors import LabelSupervisor, RotateNetSupervisor
+from supervisors import LabelSupervisor, RotateNetSupervisor, ExemplarNetSupervisor, JigsawNetSupervisor
 from torchvision import transforms
 from torch import nn
 import torch
 from torch.utils.data import random_split
 
+# ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
 # +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 # Configuration
 # +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 # Choose supervisor
-supervisor_name = 'rotate'
+supervisor_name = 'jigsaw'
 lr = 1e-3
-epochs = 1
-batch_size = 32
+epochs = 50
+batch_size = 64
 device = 'cuda'
 
+# ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
 # +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
-# Modules and data
+# Data
 # +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
-# EfficientNet backbone
-backbone = ReshapeFeatures(EfficientFeatures())
-# MLP Predictor
-predictor = ClassificationModule()
-# Combine both as a classification machine
-combined = CombinedNet(backbone, predictor).to(device)
 # Start off with CIFAR
 train_dataset, val_dataset = random_split(datasets.CIFAR10(root='./datasets/', train=True,
                                                            download=False,
-                                                           transform=transforms.Compose([transforms.Resize((224, 224)), transforms.ToTensor()])),
+                                                           transform=transforms.Compose([transforms.Resize((225, 225)), transforms.ToTensor()])),
                                           [45000, 5000],
                                           generator=torch.Generator().manual_seed(42))
 test_dataset = datasets.CIFAR10(root='./datasets/', train=False,
-                                download=False, transform=transforms.Resize((224, 224)))
+                                download=False, transform=transforms.Resize((225, 225)))
 
 # +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 # Self Supervision
 # +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 # Create supervisor
 if supervisor_name == 'rotate':
-    supervisor = RotateNetSupervisor(combined, train_dataset)
-
+    supervisor = RotateNetSupervisor(train_dataset).to(device)
+elif supervisor_name == 'exemplar':
+    supervisor = ExemplarNetSupervisor(train_dataset).to(device)
+elif supervisor_name == 'jigsaw':
+    supervisor = JigsawNetSupervisor(train_dataset).to(device)
 # Start training
 supervisor.supervise(lr=lr, epochs=epochs,
                      batch_size=batch_size, name="store/base_" + supervisor_name, pretrained=False)
 
+
+# ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 
 # +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 # Finetune with self supervised features
