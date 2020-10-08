@@ -1,8 +1,8 @@
 import torch
 from torch import nn
 from torch.nn import functional as F
-from data import RotateDataset, ExemplarDataset, JigsawDataset
-from models import ReshapeFeatures, ClassificationModule, EfficientFeatures, CombinedNet
+from data import visualize, RotateDataset, ExemplarDataset, JigsawDataset, DenoiseDataset
+from models import ReshapeFeatures, Classification, EfficientFeatures, CombinedNet, Upsampling
 from tqdm import tqdm
 from colorama import Fore
 from utils import bcolors
@@ -76,7 +76,7 @@ class RotateNetSupervisor(Supervisor):
     def __init__(self, dataset, rotations=[0.0, 90.0, 180.0,  -90.0], backbone=None, predictor=None, loss=nn.CrossEntropyLoss(reduction='mean')):
         super().__init__(CombinedNet(ReshapeFeatures(EfficientFeatures())
                                      if backbone is None else backbone,
-                                     ClassificationModule(
+                                     Classification(
                                          layers=[4096, 1024, 256, len(rotations)])
                                      if predictor is None else predictor),
                          RotateDataset(dataset, rotations=rotations),
@@ -88,7 +88,7 @@ class ExemplarNetSupervisor(Supervisor):
                  backbone=None, predictor=None, loss=nn.CrossEntropyLoss(reduction='mean')):
         super().__init__(CombinedNet(ReshapeFeatures(EfficientFeatures())
                                      if backbone is None else backbone,
-                                     ClassificationModule(
+                                     Classification(
                                          layers=[4096, 1024, 1024, n_classes])
                                      if predictor is None else predictor),
                          ExemplarDataset(
@@ -97,13 +97,27 @@ class ExemplarNetSupervisor(Supervisor):
 
 
 class JigsawNetSupervisor(Supervisor):
+    # Not the CFN of the paper for easier implementation with common backbones and, most importantly, easier reuse
     def __init__(self, dataset, jigsaw_path="utils/permutations_hamming_max_1000.npy", n_perms_per_image=69, crop_size=64,
                  backbone=None, predictor=None, loss=nn.CrossEntropyLoss(reduction='mean')):
         super().__init__(CombinedNet(ReshapeFeatures(EfficientFeatures())
                                      if backbone is None else backbone,
-                                     ClassificationModule(
+                                     Classification(
                                          layers=[4096, 1024, 1024, 1000])
                                      if predictor is None else predictor),
                          JigsawDataset(
                              dataset, jigsaw_path="utils/permutations_hamming_max_1000.npy", n_perms_per_image=69, crop_size=64),
+                         loss)
+
+
+class DenoiseNetSupervisor(Supervisor):
+    # Not the CFN of the paper for easier implementation with common backbones and, most importantly, easier reuse
+    def __init__(self, dataset, jigsaw_path="utils/permutations_hamming_max_1000.npy", p=0.7,
+                 backbone=None, predictor=None, loss=nn.MSELoss(reduction='mean')):
+        super().__init__(CombinedNet(EfficientFeatures()
+                                     if backbone is None else backbone,
+                                     Upsampling(
+                                         layers=[1280, 512, 256, 128, 64, 3])
+                                     if predictor is None else predictor),
+                         DenoiseDataset(dataset, p=p),
                          loss)

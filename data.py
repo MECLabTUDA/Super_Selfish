@@ -9,6 +9,21 @@ import random
 # +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 
 
+class DenoiseDataset(Dataset):
+    def __init__(self, dataset, p=0.7):
+        self.dataset = dataset
+        self.p = p
+
+    def __len__(self):
+        return len(self.dataset)
+
+    def __getitem__(self, idx):
+        img = self.dataset[idx][0]
+        mask = np.random.rand(1, img.shape[1], img.shape[2]) >= self.p
+        noised_img = img * mask.astype(int)
+        return noised_img.float(), img.float()
+
+
 class RotateDataset(Dataset):
     def __init__(self, dataset, rotations=[0.0, 90.0, 180.0,  -90.0]):
         self.dataset = dataset
@@ -108,10 +123,21 @@ class JigsawDataset(Dataset):
                 patch, patch_mean, patch_std)
             normed_patch = transforms.functional.to_pil_image(normed_patch)
 
-            i_out = perm[n] // 3
-            j_out = perm[n] % 3
+            i_out = (perm[n] // 3) * self.s
+            j_out = (perm[n] % 3) * self.s
+
             img_out.paste(normed_patch, box=(
                 i_out, j_out, i_out + self.s, j_out + self.s))
 
         img_out = transforms.functional.to_tensor(img_out)
         return img_out, perm_id
+
+# +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+# Data utils
+# +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+
+def visualize(dataset, idx=0, folder_path='visualization/'):
+    pil_img = transforms.functional.to_pil_image(dataset[0][0])
+    pil_img.save(folder_path + type(dataset).__name__ +
+                 "-" + str(idx) + ".png")
