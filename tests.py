@@ -1,7 +1,7 @@
-from models import ReshapeFeatures, ClassificationModule, EfficientFeatures, CombinedNet
+from models import CombinedNet, Classification, ReshapeFeatures, EfficientFeatures
 from efficientnet_pytorch import EfficientNet
 import torchvision.datasets as datasets
-from supervisors import LabelSupervisor, RotateNetSupervisor, ExemplarNetSupervisor, JigsawNetSupervisor
+from supervisors import LabelSupervisor, RotateNetSupervisor, ExemplarNetSupervisor, JigsawNetSupervisor, DenoiseNetSupervisor, ContextNetSupervisor, BiGanSupervisor
 from torchvision import transforms
 from torch import nn
 import torch
@@ -13,7 +13,7 @@ from torch.utils.data import random_split
 # Configuration
 # +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 # Choose supervisor
-supervisor_name = 'jigsaw'
+supervisor_name = 'bi'
 lr = 1e-3
 epochs = 50
 batch_size = 64
@@ -43,6 +43,13 @@ elif supervisor_name == 'exemplar':
     supervisor = ExemplarNetSupervisor(train_dataset).to(device)
 elif supervisor_name == 'jigsaw':
     supervisor = JigsawNetSupervisor(train_dataset).to(device)
+elif supervisor_name == 'upsampling':
+    supervisor = DenoiseNetSupervisor(train_dataset).to(device)
+elif supervisor_name == 'context':
+    supervisor = ContextNetSupervisor(train_dataset).to(device)
+elif supervisor_name == 'bi':
+    supervisor = BiGanSupervisor(train_dataset).to(device)
+
 # Start training
 supervisor.supervise(lr=lr, epochs=epochs,
                      batch_size=batch_size, name="store/base_" + supervisor_name, pretrained=False)
@@ -55,7 +62,7 @@ supervisor.supervise(lr=lr, epochs=epochs,
 # +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 # Finetune on "right" target
 backbone = supervisor.get_backbone()
-predictor = ClassificationModule([3136, 1024, 256, 10])
+predictor = Classification([4096, 1024, 256, 10])
 combined = CombinedNet(backbone, predictor).to(device)
 
 # Label supervisor without self-supervision
@@ -69,7 +76,7 @@ supervisor.supervise(lr=lr, epochs=epochs,
 # +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 # Train on "right" target
 backbone = ReshapeFeatures(EfficientFeatures())
-predictor = ClassificationModule([3136, 1024, 256, 10])
+predictor = Classification([4096, 1024, 256, 10])
 combined = CombinedNet(backbone, predictor).to(device)
 
 # Label supervisor without self-supervision

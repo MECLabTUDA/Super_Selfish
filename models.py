@@ -9,13 +9,52 @@ from utils import bcolors
 # +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 
 
-class ClassificationModule(nn.Module):
+class Classification(nn.Module):
     def __init__(self, layers=[3136, 1024, 256, 4], activation=nn.PReLU, batchnorm=True):
         super().__init__()
         self.model = nn.Sequential(
             *[nn.Sequential(
                 nn.Linear(in_features=layers[i - 1], out_features=layers[i]),
                 nn.BatchNorm1d(
+                    num_features=layers[i]) if batchnorm else nn.Identity(),
+                activation())
+              for i in range(1, len(layers))])
+
+    def forward(self, x):
+        return self.model(x)
+
+
+class ChannelwiseFC(nn.Module):
+    def __init__(self, backbone=None, layers=[64, 64, 64, 64], activation=nn.PReLU, batchnorm=True):
+        super().__init__()
+        if backbone is None:
+            raise NotImplementedError(
+                "You need to specify a backbone network.")
+        self.backbone = backbone
+        self.model = nn.Sequential(
+            *[nn.Sequential(
+                nn.Linear(in_features=layers[i - 1], out_features=layers[i]),
+                nn.BatchNorm1d(
+                    num_features=layers[i]) if batchnorm else nn.Identity(),
+                activation())
+              for i in range(1, len(layers))])
+
+    def forward(self, x):
+        x = self.backbone(x)
+        x_shape = x.shape
+        x = x.reshape(x_shape[0], x_shape[1], -1)
+        x = x.reshape(-1, x.shape[2])
+        return self.model(x).reshape(x_shape)
+
+
+class Upsampling(nn.Module):
+    def __init__(self, layers=[1280, 512, 256, 128, 3], kernel_size=5, stride=2, padding=2, activation=nn.ReLU, batchnorm=True):
+        super(Upsampling, self).__init__()
+        self.model = nn.Sequential(
+            *[nn.Sequential(
+                nn.ConvTranspose2d(
+                    in_channels=layers[i - 1], out_channels=layers[i], kernel_size=kernel_size, stride=stride, padding=padding),
+                nn.BatchNorm2d(
                     num_features=layers[i]) if batchnorm else nn.Identity(),
                 activation())
               for i in range(1, len(layers))])
