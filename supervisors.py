@@ -1,8 +1,8 @@
 import torch
 from torch import nn
 from torch.nn import functional as F
-from data import visualize, RotateDataset, ExemplarDataset, JigsawDataset, DenoiseDataset
-from models import ReshapeFeatures, Classification, EfficientFeatures, CombinedNet, Upsampling
+from data import visualize, RotateDataset, ExemplarDataset, JigsawDataset, DenoiseDataset, ContextDataset, BiDataset
+from models import ReshapeFeatures, Classification, EfficientFeatures, CombinedNet, Upsampling, ChannelwiseFC
 from tqdm import tqdm
 from colorama import Fore
 from utils import bcolors
@@ -23,7 +23,7 @@ class Supervisor():
             if pretrained:
                 self.load(name)
         except Exception:
-            raise IOError("Could not load CombinedNet.")
+            raise IOError("Could not load pretrained.")
         try:
             train_loader = torch.utils.data.DataLoader(self.dataset, batch_size=batch_size,
                                                        shuffle=shuffle, num_workers=num_workers)
@@ -50,6 +50,97 @@ class Supervisor():
 
     def to(self, name):
         self.model = self.model.to(name)
+        return self
+
+    def get_backbone(self):
+        return self.model.backbone
+
+    def save(self, name="store/base"):
+        torch.save(self.model.state_dict(), name + ".pt")
+        print(bcolors.OKBLUE + "Saved at " + name + "." + bcolors.ENDC)
+
+    def load(self, name="store/base"):
+        pretrained_dict = torch.load(name + ".pt")
+        print(bcolors.OKBLUE + "Loaded", name + "." + bcolors.ENDC)
+        model_dict = self.model.state_dict()
+        model_dict.update(pretrained_dict)
+        self.model.load_state_dict(model_dict)
+
+
+class GanSupervisor():
+    def __init__(self, model, discriminator, dataset, loss=nn.BCELoss(reduction='mean'), fake_loss=None):
+        self.model = model
+        self.discriminator = discriminator
+        self.dataset = dataset
+        self.loss = loss
+        self.fake_loss = fake_loss
+
+    def supervise(self, lr=1e-3, optimizer=torch.optim.Adam, epochs=10, batch_size=32, shuffle=True,
+                  num_workers=0, name="store/base", pretrained=False):
+        print(bcolors.OKGREEN + "Train with " +
+              type(self).__name__ + bcolors.ENDC)
+        try:
+            if pretrained:
+                self.load(name)
+        except Exception:
+            raise IOError("Could not load pretrained.")
+        try:
+            train_loader = torch.utils.data.DataLoader(self.dataset, batch_size=batch_size,
+                                                       shuffle=shuffle, num_workers=num_workers)
+            optimizer_m = optimizer(self.model.parameters(), lr=lr)
+            optimizer_d = optimizer(self.discriminator.parameters(), lr=lr)
+
+            for epoch_id in range(epochs):
+                loss_d_sum = 0
+                loss_m_sum = 0
+                tkb = tqdm(total=int(len(train_loader)), bar_format="{l_bar}%s{bar}%s{r_bar}" % (
+                    Fore.GREEN, Fore.RESET), desc="Batch Process Epoch " + str(epoch_id))
+
+                for batch_id, data in enumerate(train_loader):
+                    inputs, labels = data
+                    inputs, labels = inputs.to('cuda'), labels.to('cuda')
+
+                    # Discriminator ++++++++++++++++++++++++++
+                    # Disc with real
+                    optimizer_d.zero_grad()
+                    outputs = self.discriminator(labels)
+                    loss_r = self.loss(
+                        outputs, torch.ones(outputs.shape).to('cuda'))
+                    loss_r.backward()
+
+                    # Disc with fake
+                    fakes = self.model(inputs)
+                    outputs = self.discriminator(fakes.detach())
+                    loss_f = self.loss(
+                        outputs, torch.zeros(outputs.shape).to('cuda'))
+                    loss_f.backward()
+
+                    loss_d = loss_r + loss_f
+                    loss_d_sum += loss_d.item()
+                    optimizer_d.step()
+
+                    # Generator +++++++++++++++++++++++++++++
+                    optimizer_m.zero_grad()
+                    outputs = self.discriminator(fakes)
+                    loss_m = self.loss(
+                        outputs, torch.ones(outputs.shape).to('cuda'))
+                    if self.fake_loss is not None:
+                        loss_m += self.fake_loss(fakes, labels)
+                    loss_m.backward()
+                    optimizer_m.step()
+
+                    loss_m_sum += loss_m.item()
+                    tkb.set_postfix(loss_d='{:3f}'.format(
+                        loss_d_sum / (batch_id+1)), loss_m='{:3f}'.format(
+                        loss_m_sum / (batch_id+1)))
+                    tkb.update(1)
+        finally:
+            self.save(name)
+            print()
+
+    def to(self, name):
+        self.model = self.model.to(name)
+        self.discriminator = self.discriminator.to(name)
         return self
 
     def get_backbone(self):
@@ -112,7 +203,7 @@ class JigsawNetSupervisor(Supervisor):
 
 class DenoiseNetSupervisor(Supervisor):
     # Not the CFN of the paper for easier implementation with common backbones and, most importantly, easier reuse
-    def __init__(self, dataset, jigsaw_path="utils/permutations_hamming_max_1000.npy", p=0.7,
+    def __init__(self, dataset, p=0.7,
                  backbone=None, predictor=None, loss=nn.MSELoss(reduction='mean')):
         super().__init__(CombinedNet(EfficientFeatures()
                                      if backbone is None else backbone,
@@ -121,3 +212,108 @@ class DenoiseNetSupervisor(Supervisor):
                                      if predictor is None else predictor),
                          DenoiseDataset(dataset, p=p),
                          loss)
+
+
+class ContextNetSupervisor(GanSupervisor):
+    # Not the CFN of the paper for easier implementation with common backbones and, most importantly, easier reuse
+    def __init__(self, dataset,  p=0.3, n_blocks=10, scale_range=(0.05, 0.1),
+                 backbone=None, predictor=None, discriminator=None, loss=nn.MSELoss(reduction='mean'), fake_loss=nn.MSELoss(reduction='mean')):
+        super().__init__(CombinedNet(ChannelwiseFC(EfficientFeatures())
+                                     if backbone is None else backbone,
+                                     Upsampling(
+                                         layers=[1280, 512, 256, 128, 64, 3])
+                                     if predictor is None else predictor),
+                         CombinedNet(ReshapeFeatures(EfficientFeatures()), Classification(
+                             layers=[4096,  1024, 256, 1])) if discriminator is None else discriminator,
+                         ContextDataset(
+                             dataset, p=p, n_blocks=n_blocks, scale_range=scale_range),
+                         loss,
+                         fake_loss)
+        visualize(ContextDataset(
+            dataset, p=p, n_blocks=n_blocks, scale_range=scale_range),)
+
+
+class BiGanSupervisor(GanSupervisor):
+    # Not the CFN of the paper for easier implementation with common backbones and, most importantly, easier reuse
+    def __init__(self, dataset, shape=(32, 8, 8), rand_gen=np.random.rand,
+                 backbone=None, predictor=None, discriminator=None, loss=nn.MSELoss(reduction='mean'), fake_loss=nn.MSELoss(reduction='mean')):
+        super().__init__(CombinedNet(ReshapeFeatures(EfficientFeatures(), out_channels=32)
+                                     if backbone is None else backbone,
+                                     Upsampling(
+                                         layers=[32, 128, 256, 128, 64, 3])
+                                     if predictor is None else predictor),
+                         CombinedNet(ReshapeFeatures(EfficientFeatures(), out_channels=32), Classification(
+                             layers=[4096, 1024, 256, 1])) if discriminator is None else discriminator,
+                         BiDataset(
+                             dataset, shape=shape, rand_gen=rand_gen),
+                         loss,
+                         fake_loss)
+
+    def supervise(self, lr=1e-3, optimizer=torch.optim.Adam, epochs=10, batch_size=32, shuffle=True,
+                  num_workers=0, name="store/base", pretrained=False):
+        print(bcolors.OKGREEN + "Train with " +
+              type(self).__name__ + bcolors.ENDC)
+        try:
+            if pretrained:
+                self.load(name)
+        except Exception:
+            raise IOError("Could not load pretrained.")
+        try:
+            train_loader = torch.utils.data.DataLoader(self.dataset, batch_size=batch_size,
+                                                       shuffle=shuffle, num_workers=num_workers)
+            optimizer_m = optimizer(self.model.parameters(), lr=lr)
+            optimizer_d = optimizer(self.discriminator.parameters(), lr=lr)
+
+            for epoch_id in range(epochs):
+                loss_d_sum = 0
+                loss_m_sum = 0
+                tkb = tqdm(total=int(len(train_loader)), bar_format="{l_bar}%s{bar}%s{r_bar}" % (
+                    Fore.GREEN, Fore.RESET), desc="Batch Process Epoch " + str(epoch_id))
+
+                for batch_id, data in enumerate(train_loader):
+                    inputs, labels = data
+                    inputs, labels = inputs.to('cuda'), labels.to('cuda')
+
+                    # Discriminator ++++++++++++++++++++++++++
+                    # Disc with real
+                    optimizer_d.zero_grad()
+                    joined_in = torch.cat((self.model.backbone(
+                        labels), self.discriminator.backbone(labels)), dim=1)
+                    outputs = self.discriminator.predictor(joined_in)
+                    loss_r = self.loss(
+                        outputs, torch.ones(outputs.shape).to('cuda'))
+                    loss_r.backward()
+
+                    # Disc with fake
+                    fakes = self.model.predictor(inputs)
+                    joined_in = torch.cat(
+                        (inputs.reshape(inputs.shape[0], -1), self.discriminator.backbone(fakes.detach())), dim=1)
+                    outputs = self.discriminator.predictor(joined_in)
+                    loss_f = self.loss(
+                        outputs, torch.zeros(outputs.shape).to('cuda'))
+                    loss_f.backward()
+
+                    loss_d = loss_r + loss_f
+                    loss_d_sum += loss_d.item()
+                    optimizer_d.step()
+
+                    # Generator +++++++++++++++++++++++++++++
+                    optimizer_m.zero_grad()
+                    joined_in = torch.cat(
+                        (inputs.reshape(inputs.shape[0], -1), self.discriminator.backbone(fakes.detach())), dim=1)
+                    outputs = self.discriminator.predictor(joined_in)
+                    loss_m = self.loss(
+                        outputs, torch.ones(outputs.shape).to('cuda'))
+                    if self.fake_loss is not None:
+                        loss_m += self.fake_loss(fakes, labels)
+                    loss_m.backward()
+                    optimizer_m.step()
+
+                    loss_m_sum += loss_m.item()
+                    tkb.set_postfix(loss_d='{:3f}'.format(
+                        loss_d_sum / (batch_id+1)), loss_m='{:3f}'.format(
+                        loss_m_sum / (batch_id+1)))
+                    tkb.update(1)
+        finally:
+            self.save(name)
+            print()

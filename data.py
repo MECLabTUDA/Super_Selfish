@@ -24,6 +24,40 @@ class DenoiseDataset(Dataset):
         return noised_img.float(), img.float()
 
 
+class BiDataset(Dataset):
+    def __init__(self, dataset, shape=(32, 8, 8), rand_gen=np.random.rand):
+        self.dataset = dataset
+        self.rand_gen = rand_gen
+        self.shape = shape
+
+    def __len__(self):
+        return len(self.dataset)
+
+    def __getitem__(self, idx):
+        img = self.dataset[idx][0]
+        z = torch.from_numpy(self.rand_gen(*self.shape))
+        return z.float(), img.float()
+
+
+class ContextDataset(Dataset):
+    def __init__(self, dataset, p=0.3, n_blocks=10, scale_range=(0.02, 0.33)):
+        self.dataset = dataset
+        self.n_blocks = n_blocks
+        self.erase = transforms.RandomErasing(
+            p=p, scale=scale_range, ratio=(0.3, 3.3), value=0, inplace=False)
+
+    def __len__(self):
+        return len(self.dataset)
+
+    def __getitem__(self, idx):
+        img = self.dataset[idx][0]
+        erased_img = img
+        for _ in range(self.n_blocks):
+            erased_img = self.erase(erased_img)
+
+        return erased_img, img
+
+
 class RotateDataset(Dataset):
     def __init__(self, dataset, rotations=[0.0, 90.0, 180.0,  -90.0]):
         self.dataset = dataset
