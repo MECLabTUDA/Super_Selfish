@@ -1,7 +1,7 @@
 from models import CombinedNet, Classification, ReshapeFeatures, EfficientFeatures
 from efficientnet_pytorch import EfficientNet
 import torchvision.datasets as datasets
-from supervisors import LabelSupervisor, RotateNetSupervisor, ExemplarNetSupervisor, JigsawNetSupervisor, DenoiseNetSupervisor, ContextNetSupervisor, BiGanSupervisor
+from supervisors import LabelSupervisor, RotateNetSupervisor, ExemplarNetSupervisor, JigsawNetSupervisor, DenoiseNetSupervisor, ContextNetSupervisor, BiGanSupervisor, SplitBrainNetSupervisor
 from torchvision import transforms
 from torch import nn
 import torch
@@ -13,10 +13,10 @@ from torch.utils.data import random_split
 # Configuration
 # +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 # Choose supervisor
-supervisor_name = 'bi'
+supervisor_name = 'splitbrain'
 lr = 1e-3
 epochs = 50
-batch_size = 64
+batch_size = 32
 device = 'cuda'
 
 # ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
@@ -49,6 +49,8 @@ elif supervisor_name == 'context':
     supervisor = ContextNetSupervisor(train_dataset).to(device)
 elif supervisor_name == 'bi':
     supervisor = BiGanSupervisor(train_dataset).to(device)
+elif supervisor_name == 'splitbrain':
+    supervisor = SplitBrainNetSupervisor(train_dataset).to(device)
 
 # Start training
 supervisor.supervise(lr=lr, epochs=epochs,

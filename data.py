@@ -3,10 +3,44 @@ from torchvision import transforms, utils
 import numpy as np
 import torch
 import random
+from skimage.color import lab2rgb, rgb2lab
 
 # +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 # Library Datasets
 # +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+
+class SplitBrainDataset(Dataset):
+    def __init__(self, dataset, l_step=2, l_offset=0, ab_step=26, a_offset=127, b_offset=128):
+        self.dataset = dataset
+        # No gammut implementation
+        self.l_step = l_step
+        self.l_offset = l_offset
+        self.ab_step = ab_step
+        self.a_offset = a_offset
+        self.b_offset = b_offset
+        self.n_bins = b_offset * 2 // ab_step
+
+    def __len__(self):
+        return len(self.dataset)
+
+    def __getitem__(self, idx):
+        img = self.dataset[idx][0].permute(1, 2, 0).cpu().numpy()
+        lab_img = torch.from_numpy(rgb2lab(img)).permute(2, 0, 1)
+
+        lab_lab = lab_img.clone()
+        lab_lab[0, :, :] += self.l_offset
+        lab_lab[0, :, :] //= self.l_step
+        lab_lab[0, :, :] = torch.max(torch.zeros(1), lab_lab[0, :, :])
+
+        lab_lab[1, :, :] += self.a_offset
+        lab_lab[2, :, :] += self.b_offset
+        lab_lab[[1, 2], :, :] //= self.ab_step
+        lab_lab[1, :, :] *= self.n_bins
+        lab_lab[1, :, :] += lab_lab[2, :, :]
+        lab_lab = lab_lab[:2, :, :]
+
+        return lab_img.float(), lab_lab.long()
 
 
 class DenoiseDataset(Dataset):

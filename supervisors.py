@@ -1,8 +1,8 @@
 import torch
 from torch import nn
 from torch.nn import functional as F
-from data import visualize, RotateDataset, ExemplarDataset, JigsawDataset, DenoiseDataset, ContextDataset, BiDataset
-from models import ReshapeFeatures, Classification, EfficientFeatures, CombinedNet, Upsampling, ChannelwiseFC
+from data import visualize, RotateDataset, ExemplarDataset, JigsawDataset, DenoiseDataset, ContextDataset, BiDataset, SplitBrainDataset
+from models import ReshapeFeatures, Classification, GroupedCrossEntropyLoss, EfficientFeatures, CombinedNet, Upsampling, ChannelwiseFC, GroupedEfficientFeatures, GroupedUpsampling
 from tqdm import tqdm
 from colorama import Fore
 from utils import bcolors
@@ -211,6 +211,20 @@ class DenoiseNetSupervisor(Supervisor):
                                          layers=[1280, 512, 256, 128, 64, 3])
                                      if predictor is None else predictor),
                          DenoiseDataset(dataset, p=p),
+                         loss)
+
+
+class SplitBrainNetSupervisor(Supervisor):
+    # Not the CFN of the paper for easier implementation with common backbones and, most importantly, easier reuse
+    def __init__(self, dataset, l_step=2, l_offset=0, ab_step=26, a_offset=128, b_offset=128,
+                 backbone=None, predictor=None, loss=GroupedCrossEntropyLoss()):
+        super().__init__(CombinedNet(GroupedEfficientFeatures()
+                                     if backbone is None else backbone,
+                                     GroupedUpsampling(
+                                         layers=[1280, 512, 256, 128, 64])
+                                     if predictor is None else predictor),
+                         SplitBrainDataset(dataset, l_step=l_step, l_offset=l_offset - 1,
+                                           ab_step=ab_step, a_offset=a_offset, b_offset=b_offset),
                          loss)
 
 

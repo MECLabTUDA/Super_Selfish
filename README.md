@@ -8,6 +8,7 @@ Currently supports:
 - Jigsaw Puzzle https://arxiv.org/abs/1603.09246
 - Denoising Autoencoder https://www.cs.toronto.edu/~larocheh/publications/icml-2008-denoising-autoencoders.pdf
 - Context Autencoder https://arxiv.org/pdf/1604.07379.pdf 
+- SplitBrain Autoencoder https://arxiv.org/pdf/1611.09842.pdf
 - BiGAN https://arxiv.org/pdf/1605.09782.pdf
 
 Training is as easy as:
@@ -20,6 +21,7 @@ supervisor = RotateNetSupervisor(train_dataset).to(device)
 #supervisor = DenoiseNetSupervisor(train_dataset).to(device)
 #supervisor = ContextNetSupervisor(train_dataset).to(device)
 #supervisor = BiGanSupervisor(train_dataset).to(device)
+#supervisor = SplitBrainNetSupervisor(train_dataset).to(device)
 
 # Start training
 supervisor.supervise(lr=lr, epochs=epochs,
@@ -31,3 +33,5 @@ supervisor.supervise(lr=lr, epochs=epochs,
 
 # TODOs
 - DataParallel
+- Docs
+- Visual testing
