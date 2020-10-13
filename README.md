@@ -15,7 +15,7 @@ Currently supports:
 - BiGAN https://arxiv.org/pdf/1605.09782.pdf
 ### Contrastive loss
 - Contrastive Predictive Coding https://arxiv.org/pdf/1905.09272.pdf
-- Momentum Contrast https://arxiv.org/pdf/1911.05722.pdf
+- Momentum Contrast (Actually V2) https://arxiv.org/pdf/1911.05722.pdf https://arxiv.org/abs/2002.05709
 
 Training is as easy as:
 

@@ -149,7 +149,7 @@ class GroupedCrossEntropyLoss(nn.Module):
         return losses
 
 
-class InfoNCE(nn.Module):
+class CPCLoss(nn.Module):
     def __init__(self, target_shaper=ReshapeChannels(nn.Identity(), in_channels=1280, out_channels=64,
                                                      kernel_size=1, padding=0, activation=nn.Identity, flat=False),
                  k=2, ignore=3, N=2, reduction='mean'):

@@ -4,7 +4,7 @@ from torch.nn import functional as F
 from data import visualize, RotateDataset, ExemplarDataset, JigsawDataset, DenoiseDataset, \
     ContextDataset, BiDataset, SplitBrainDataset, ContrastivePreditiveCodingDataset, MomentumContrastDataset
 from models import ReshapeChannels, Classification, Batch2Image, GroupedCrossEntropyLoss, \
-    InfoNCE, MaskedCNN, EfficientFeatures, CombinedNet, Upsampling, ChannelwiseFC, GroupedEfficientFeatures, \
+    CPCLoss, MaskedCNN, EfficientFeatures, CombinedNet, Upsampling, ChannelwiseFC, GroupedEfficientFeatures, \
     GroupedUpsampling
 from tqdm import tqdm
 from colorama import Fore
@@ -338,7 +338,7 @@ class BiGanSupervisor(GanSupervisor):
 class ContrastivePredictiveCodingSupervisor(Supervisor):
     # Not the CFN of the paper for easier implementation with common backbones and, most importantly, easier reuse
     def __init__(self, dataset, half_crop_size=(int(25), int(25)),
-                 backbone=None, predictor=None, loss=InfoNCE(k=3, ignore=2).to('cuda')):
+                 backbone=None, predictor=None, loss=CPCLoss(k=3, ignore=2).to('cuda')):
         super().__init__(CombinedNet(Batch2Image(nn.Sequential(EfficientFeatures(), nn.AvgPool2d(2)))
                                      if backbone is None else backbone,
                                      ReshapeChannels(MaskedCNN(
@@ -438,11 +438,14 @@ class MomentumContrastSupervisor(Supervisor):
                     q = self.model(imgs1.to('cuda'))
                     with torch.no_grad():
                         k = self.model_k(imgs2.to('cuda'))
+                        k = F.normalize(k)
+                    q = F.normalize(q)
 
                     l_pos = torch.bmm(q.view(q.shape[0], 1, q.shape[1]), k.view(
                         k.shape[0], k.shape[1], 1)).squeeze(2)
 
-                    l_neg = torch.mm(q, queue.permute(1, 0))
+                    l_neg = torch.mm(
+                        q, F.normalize(queue).permute(1, 0))
                     logits = torch.cat([l_pos, l_neg], dim=1)
 
                     labels = torch.zeros(batch_size, device='cuda').long()
