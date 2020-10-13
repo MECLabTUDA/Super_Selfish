@@ -1,7 +1,9 @@
 from models import CombinedNet, Classification, ReshapeChannels, EfficientFeatures
 from efficientnet_pytorch import EfficientNet
 import torchvision.datasets as datasets
-from supervisors import LabelSupervisor, RotateNetSupervisor, ExemplarNetSupervisor, JigsawNetSupervisor, DenoiseNetSupervisor, ContextNetSupervisor, BiGanSupervisor, SplitBrainNetSupervisor, ContrastivePredictiveCodingSupervisor
+from supervisors import LabelSupervisor, RotateNetSupervisor, ExemplarNetSupervisor, \
+    JigsawNetSupervisor, DenoiseNetSupervisor, ContextNetSupervisor, BiGanSupervisor, \
+    SplitBrainNetSupervisor, ContrastivePredictiveCodingSupervisor, MomentumContrastSupervisor
 from torchvision import transforms
 from torch import nn
 import torch
@@ -14,7 +16,7 @@ from data import siamese_collate
 # Configuration
 # +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 # Choose supervisor
-supervisor_name = 'contrastive'
+supervisor_name = 'momentum'
 lr = 1e-3
 epochs = 50
 batch_size = 32
@@ -56,7 +58,9 @@ elif supervisor_name == 'contrastive':
     supervisor = ContrastivePredictiveCodingSupervisor(
         train_dataset).to(device)
     collate_fn = siamese_collate
-
+elif supervisor_name == 'momentum':
+    supervisor = MomentumContrastSupervisor(
+        train_dataset).to(device)
 # Start training
 supervisor.supervise(lr=lr, epochs=epochs,
                      batch_size=batch_size, name="store/base_" + supervisor_name, pretrained=False, collate_fn=collate_fn)

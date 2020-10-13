@@ -1,12 +1,16 @@
 import torch
 from torch import nn
 from torch.nn import functional as F
-from data import visualize, RotateDataset, ExemplarDataset, JigsawDataset, DenoiseDataset, ContextDataset, BiDataset, SplitBrainDataset, ContrastivePreditiveCodingDataset
-from models import ReshapeChannels, Classification, Batch2Image, GroupedCrossEntropyLoss, InfoNCE, MaskedCNN, EfficientFeatures, CombinedNet, Upsampling, ChannelwiseFC, GroupedEfficientFeatures, GroupedUpsampling
+from data import visualize, RotateDataset, ExemplarDataset, JigsawDataset, DenoiseDataset, \
+    ContextDataset, BiDataset, SplitBrainDataset, ContrastivePreditiveCodingDataset, MomentumContrastDataset
+from models import ReshapeChannels, Classification, Batch2Image, GroupedCrossEntropyLoss, \
+    InfoNCE, MaskedCNN, EfficientFeatures, CombinedNet, Upsampling, ChannelwiseFC, GroupedEfficientFeatures, \
+    GroupedUpsampling
 from tqdm import tqdm
 from colorama import Fore
 from utils import bcolors
 import numpy as np
+import copy
 
 
 class Supervisor():
@@ -372,6 +376,91 @@ class ContrastivePredictiveCodingSupervisor(Supervisor):
                     loss.backward()
                     optimizer.step()
                     loss_sum += loss.item()
+                    tkb.set_postfix(loss='{:3f}'.format(
+                        loss_sum / (batch_id+1)))
+                    tkb.update(1)
+        finally:
+            self.save(name)
+            print()
+
+
+class MomentumContrastSupervisor(Supervisor):
+    def __init__(self, dataset, transformations=['crop', 'gray', 'flip', 'jitter'], n_trans=10000, max_elms=3, p=0.5, embedding_size=64,
+                 backbone=None, predictor=None, loss=nn.CrossEntropyLoss(reduction='mean')):
+        super().__init__(CombinedNet(ReshapeChannels(EfficientFeatures())
+                                     if backbone is None else backbone,
+                                     Classification(
+                                         layers=[4096, 1024, 1024, embedding_size])
+                                     if predictor is None else predictor),
+                         MomentumContrastDataset(
+                             dataset, transformations=transformations, n_trans=n_trans, max_elms=max_elms, p=p),
+                         loss)
+        self.embedding_size = embedding_size
+
+    def supervise(self, lr=1e-3, optimizer=torch.optim.Adam, epochs=10, batch_size=32, shuffle=True,
+                  num_workers=0, name="store/base", pretrained=False, collate_fn=None, K=8, m=0.999):
+        print(bcolors.OKGREEN + "Train with " +
+              type(self).__name__ + bcolors.ENDC)
+        try:
+            if pretrained:
+                self.load(name)
+        except Exception:
+            raise IOError("Could not load pretrained.")
+        try:
+            train_loader = torch.utils.data.DataLoader(self.dataset, batch_size=batch_size,
+                                                       shuffle=shuffle, num_workers=num_workers, collate_fn=collate_fn)
+            optimizer = optimizer(self.model.parameters(), lr=lr)
+            self.model_k = copy.deepcopy(self.model)
+            queue = torch.empty(
+                K * batch_size, self.embedding_size, requires_grad=False, device='cuda')
+            queue_pointer = 0
+            # Init queue
+            with torch.no_grad():
+                for batch_id, data in enumerate(train_loader):
+                    imgs1, imgs2 = data
+                    k = self.model_k(imgs2.to('cuda'))
+                    queue[queue_pointer *
+                          batch_size:(queue_pointer + 1) * batch_size, :] = k
+                    if queue_pointer == 7:
+                        break
+                    queue_pointer = (queue_pointer + 1) % K
+
+            queue_pointer = 0
+            for epoch_id in range(epochs):
+                loss_sum = 0
+                tkb = tqdm(total=int(len(train_loader)), bar_format="{l_bar}%s{bar}%s{r_bar}" % (
+                    Fore.GREEN, Fore.RESET), desc="Batch Process Epoch " + str(epoch_id))
+
+                for batch_id, data in enumerate(train_loader):
+                    imgs1, imgs2 = data
+                    optimizer.zero_grad()
+
+                    q = self.model(imgs1.to('cuda'))
+                    with torch.no_grad():
+                        k = self.model_k(imgs2.to('cuda'))
+
+                    l_pos = torch.bmm(q.view(q.shape[0], 1, q.shape[1]), k.view(
+                        k.shape[0], k.shape[1], 1)).squeeze(2)
+
+                    l_neg = torch.mm(q, queue.permute(1, 0))
+                    logits = torch.cat([l_pos, l_neg], dim=1)
+
+                    labels = torch.zeros(batch_size, device='cuda').long()
+                    loss = self.loss(logits, labels)
+                    loss.backward()
+                    optimizer.step()
+                    loss_sum += loss.item()
+
+                    # There should be a better way...
+                    with torch.no_grad():
+                        for param_q, param_k in zip(self.model.parameters(), self.model_k.parameters()):
+                            param_k.data = param_k.data * m + \
+                                param_q.data * (1. - m)
+
+                        queue[queue_pointer *
+                              batch_size:(queue_pointer + 1) * batch_size, :] = k
+                        queue_pointer = (queue_pointer + 1) % K
+
                     tkb.set_postfix(loss='{:3f}'.format(
                         loss_sum / (batch_id+1)))
                     tkb.update(1)

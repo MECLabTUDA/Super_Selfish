@@ -149,9 +149,6 @@ class GroupedCrossEntropyLoss(nn.Module):
         return losses
 
 
-torch.autograd.set_detect_anomaly(True)
-
-
 class InfoNCE(nn.Module):
     def __init__(self, target_shaper=ReshapeChannels(nn.Identity(), in_channels=1280, out_channels=64,
                                                      kernel_size=1, padding=0, activation=nn.Identity, flat=False),
