@@ -1,8 +1,8 @@
 import torch
 from torch import nn
 from torch.nn import functional as F
-from data import visualize, RotateDataset, ExemplarDataset, JigsawDataset, DenoiseDataset, ContextDataset, BiDataset, SplitBrainDataset
-from models import ReshapeFeatures, Classification, GroupedCrossEntropyLoss, EfficientFeatures, CombinedNet, Upsampling, ChannelwiseFC, GroupedEfficientFeatures, GroupedUpsampling
+from data import visualize, RotateDataset, ExemplarDataset, JigsawDataset, DenoiseDataset, ContextDataset, BiDataset, SplitBrainDataset, ContrastivePreditiveCodingDataset
+from models import ReshapeChannels, Classification, Batch2Image, GroupedCrossEntropyLoss, InfoNCE, MaskedCNN, EfficientFeatures, CombinedNet, Upsampling, ChannelwiseFC, GroupedEfficientFeatures, GroupedUpsampling
 from tqdm import tqdm
 from colorama import Fore
 from utils import bcolors
@@ -16,7 +16,7 @@ class Supervisor():
         self.loss = loss
 
     def supervise(self, lr=1e-3, optimizer=torch.optim.Adam, epochs=10, batch_size=32, shuffle=True,
-                  num_workers=0, name="store/base", pretrained=False):
+                  num_workers=0, name="store/base", pretrained=False, collate_fn=None):
         print(bcolors.OKGREEN + "Train with " +
               type(self).__name__ + bcolors.ENDC)
         try:
@@ -26,7 +26,7 @@ class Supervisor():
             raise IOError("Could not load pretrained.")
         try:
             train_loader = torch.utils.data.DataLoader(self.dataset, batch_size=batch_size,
-                                                       shuffle=shuffle, num_workers=num_workers)
+                                                       shuffle=shuffle, num_workers=num_workers, collate_fn=collate_fn)
             optimizer = optimizer(self.model.parameters(), lr=lr)
             for epoch_id in range(epochs):
                 loss_sum = 0
@@ -165,7 +165,7 @@ class LabelSupervisor(Supervisor):
 
 class RotateNetSupervisor(Supervisor):
     def __init__(self, dataset, rotations=[0.0, 90.0, 180.0,  -90.0], backbone=None, predictor=None, loss=nn.CrossEntropyLoss(reduction='mean')):
-        super().__init__(CombinedNet(ReshapeFeatures(EfficientFeatures())
+        super().__init__(CombinedNet(ReshapeChannels(EfficientFeatures())
                                      if backbone is None else backbone,
                                      Classification(
                                          layers=[4096, 1024, 256, len(rotations)])
@@ -177,7 +177,7 @@ class RotateNetSupervisor(Supervisor):
 class ExemplarNetSupervisor(Supervisor):
     def __init__(self, dataset, transformations=['rotation', 'crop', 'gray', 'flip', 'erase'], n_classes=8000, n_trans=100, max_elms=10, p=0.5,
                  backbone=None, predictor=None, loss=nn.CrossEntropyLoss(reduction='mean')):
-        super().__init__(CombinedNet(ReshapeFeatures(EfficientFeatures())
+        super().__init__(CombinedNet(ReshapeChannels(EfficientFeatures())
                                      if backbone is None else backbone,
                                      Classification(
                                          layers=[4096, 1024, 1024, n_classes])
@@ -191,7 +191,7 @@ class JigsawNetSupervisor(Supervisor):
     # Not the CFN of the paper for easier implementation with common backbones and, most importantly, easier reuse
     def __init__(self, dataset, jigsaw_path="utils/permutations_hamming_max_1000.npy", n_perms_per_image=69, crop_size=64,
                  backbone=None, predictor=None, loss=nn.CrossEntropyLoss(reduction='mean')):
-        super().__init__(CombinedNet(ReshapeFeatures(EfficientFeatures())
+        super().__init__(CombinedNet(ReshapeChannels(EfficientFeatures())
                                      if backbone is None else backbone,
                                      Classification(
                                          layers=[4096, 1024, 1024, 1000])
@@ -237,26 +237,24 @@ class ContextNetSupervisor(GanSupervisor):
                                      Upsampling(
                                          layers=[1280, 512, 256, 128, 64, 3])
                                      if predictor is None else predictor),
-                         CombinedNet(ReshapeFeatures(EfficientFeatures()), Classification(
+                         CombinedNet(ReshapeChannels(EfficientFeatures()), Classification(
                              layers=[4096,  1024, 256, 1])) if discriminator is None else discriminator,
                          ContextDataset(
                              dataset, p=p, n_blocks=n_blocks, scale_range=scale_range),
                          loss,
                          fake_loss)
-        visualize(ContextDataset(
-            dataset, p=p, n_blocks=n_blocks, scale_range=scale_range),)
 
 
 class BiGanSupervisor(GanSupervisor):
     # Not the CFN of the paper for easier implementation with common backbones and, most importantly, easier reuse
     def __init__(self, dataset, shape=(32, 8, 8), rand_gen=np.random.rand,
                  backbone=None, predictor=None, discriminator=None, loss=nn.MSELoss(reduction='mean'), fake_loss=nn.MSELoss(reduction='mean')):
-        super().__init__(CombinedNet(ReshapeFeatures(EfficientFeatures(), out_channels=32)
+        super().__init__(CombinedNet(ReshapeChannels(EfficientFeatures(), out_channels=32)
                                      if backbone is None else backbone,
                                      Upsampling(
                                          layers=[32, 128, 256, 128, 64, 3])
                                      if predictor is None else predictor),
-                         CombinedNet(ReshapeFeatures(EfficientFeatures(), out_channels=32), Classification(
+                         CombinedNet(ReshapeChannels(EfficientFeatures(), out_channels=32), Classification(
                              layers=[4096, 1024, 256, 1])) if discriminator is None else discriminator,
                          BiDataset(
                              dataset, shape=shape, rand_gen=rand_gen),
@@ -327,6 +325,55 @@ class BiGanSupervisor(GanSupervisor):
                     tkb.set_postfix(loss_d='{:3f}'.format(
                         loss_d_sum / (batch_id+1)), loss_m='{:3f}'.format(
                         loss_m_sum / (batch_id+1)))
+                    tkb.update(1)
+        finally:
+            self.save(name)
+            print()
+
+
+class ContrastivePredictiveCodingSupervisor(Supervisor):
+    # Not the CFN of the paper for easier implementation with common backbones and, most importantly, easier reuse
+    def __init__(self, dataset, half_crop_size=(int(25), int(25)),
+                 backbone=None, predictor=None, loss=InfoNCE(k=3, ignore=2).to('cuda')):
+        super().__init__(CombinedNet(Batch2Image(nn.Sequential(EfficientFeatures(), nn.AvgPool2d(2)))
+                                     if backbone is None else backbone,
+                                     ReshapeChannels(MaskedCNN(
+                                         layers=[1280, 512, 256, 128, 128], mask=torch.from_numpy(np.array([[1, 1, 1], [1, 1, 1], [0, 0, 0]]))),
+                                         in_channels=128, out_channels=64 * loss.k, kernel_size=1, padding=0, activation=nn.Identity, flat=False)
+                                     if predictor is None else predictor),
+                         ContrastivePreditiveCodingDataset(
+                             dataset, half_crop_size=half_crop_size),
+                         loss)
+
+    def supervise(self, lr=1e-3, optimizer=torch.optim.Adam, epochs=10, batch_size=32, shuffle=True,
+                  num_workers=0, name="store/base", pretrained=False, collate_fn=None):
+        print(bcolors.OKGREEN + "Train with " +
+              type(self).__name__ + bcolors.ENDC)
+        try:
+            if pretrained:
+                self.load(name)
+        except Exception:
+            raise IOError("Could not load pretrained.")
+        try:
+            train_loader = torch.utils.data.DataLoader(self.dataset, batch_size=batch_size,
+                                                       shuffle=shuffle, num_workers=num_workers, collate_fn=collate_fn)
+            optimizer = optimizer(self.model.parameters(), lr=lr)
+            for epoch_id in range(epochs):
+                loss_sum = 0
+                tkb = tqdm(total=int(len(train_loader)), bar_format="{l_bar}%s{bar}%s{r_bar}" % (
+                    Fore.GREEN, Fore.RESET), desc="Batch Process Epoch " + str(epoch_id))
+
+                for batch_id, data in enumerate(train_loader):
+                    inputs, _ = data
+                    optimizer.zero_grad()
+                    encodings = self.model.backbone(inputs.to('cuda'))
+                    predictions = self.model.predictor(encodings)
+                    loss = self.loss(predictions, encodings)
+                    loss.backward()
+                    optimizer.step()
+                    loss_sum += loss.item()
+                    tkb.set_postfix(loss='{:3f}'.format(
+                        loss_sum / (batch_id+1)))
                     tkb.update(1)
         finally:
             self.save(name)

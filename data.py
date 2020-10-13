@@ -10,6 +10,29 @@ from skimage.color import lab2rgb, rgb2lab
 # +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 
 
+class ContrastivePreditiveCodingDataset(Dataset):
+    def __init__(self, dataset, half_crop_size=(25, 25)):
+        self.dataset = dataset
+        self.half_crop_size = half_crop_size
+
+    def __len__(self):
+        return len(self.dataset)
+
+    def __getitem__(self, idx):
+        img = self.dataset[idx][0]
+        n_x = img.shape[1] // self.half_crop_size[0] - 1
+        n_y = img.shape[2] // self.half_crop_size[1] - 1
+
+        crops = []
+        for i in range(n_x):
+            for j in range(n_y):
+                crops.append(img[:, i * self.half_crop_size[0]: (i+2) * self.half_crop_size[0],
+                                 j * self.half_crop_size[1]: (j+2) * self.half_crop_size[1]])
+
+        crops = torch.stack(crops)
+        return crops, crops
+
+
 class SplitBrainDataset(Dataset):
     def __init__(self, dataset, l_step=2, l_offset=0, ab_step=26, a_offset=127, b_offset=128):
         self.dataset = dataset
@@ -209,3 +232,10 @@ def visualize(dataset, idx=0, folder_path='visualization/'):
     pil_img = transforms.functional.to_pil_image(dataset[0][0])
     pil_img.save(folder_path + type(dataset).__name__ +
                  "-" + str(idx) + ".png")
+
+
+def siamese_collate(data):
+    transposed_data = list(zip(*data))
+    img = torch.cat(transposed_data[0], 0)
+    labels = torch.cat(transposed_data[1], 0)
+    return img, labels

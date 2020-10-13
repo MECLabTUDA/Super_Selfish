@@ -64,6 +64,24 @@ class Upsampling(nn.Module):
         return self.model(x)
 
 
+class MaskedCNN(nn.Module):
+    def __init__(self, layers=[1280, 512, 256, 128, 3],  mask=torch.ones((3, 3)).to('cuda'), stride=1, padding=1, activation=nn.PReLU, batchnorm=True):
+        super().__init__()
+        kernel_size = mask.shape[0]
+        self.model = nn.Sequential(
+            *[nn.Sequential(
+                ConvMasked2d(mask=torch.unsqueeze(torch.unsqueeze(mask, dim=0), dim=0),
+                             in_channels=layers[i -
+                                                1], out_channels=layers[i], kernel_size=kernel_size, stride=stride, padding=padding),
+                nn.BatchNorm2d(
+                    num_features=layers[i]) if batchnorm else nn.Identity(),
+                activation())
+              for i in range(1, len(layers))])
+
+    def forward(self, x):
+        return self.model(x)
+
+
 class GroupedUpsampling(nn.Module):
     def __init__(self, layers=[1280, 512, 256, 128], groups=np.array([50, 100]), kernel_size=5, stride=2, padding=2, activation=nn.ReLU, batchnorm=True):
         super().__init__()
@@ -94,6 +112,25 @@ class GroupedUpsampling(nn.Module):
         return torch.cat(features, dim=1)
 
 
+class ReshapeChannels(nn.Module):
+    def __init__(self, backbone=None, in_channels=1280, out_channels=64, kernel_size=3, stride=1, padding=1, activation=nn.PReLU, groups=1, flat=True):
+        super().__init__()
+        if backbone is None:
+            raise NotImplementedError(
+                "You need to specify a backbone network.")
+        self.backbone = backbone
+        self.model = nn.Sequential(nn.Conv2d(
+            in_channels, out_channels, kernel_size, stride, padding, groups=groups), activation())
+        self.flat = flat
+
+    def forward(self, x):
+        x = self.backbone(x)
+        if self.flat:
+            return self.model(x).reshape(x.shape[0], -1)
+        else:
+            return self.model(x)
+
+
 class GroupedCrossEntropyLoss(nn.Module):
     def __init__(self, loss=nn.CrossEntropyLoss, groups=np.array([50, 100]), reduction='mean'):
         super().__init__()
@@ -112,23 +149,96 @@ class GroupedCrossEntropyLoss(nn.Module):
         return losses
 
 
-class ReshapeFeatures(nn.Module):
-    def __init__(self, backbone=None, in_channels=1280, out_channels=64, kernel_size=3, stride=1, padding=1, activation=nn.PReLU, groups=1, flat=True):
+torch.autograd.set_detect_anomaly(True)
+
+
+class InfoNCE(nn.Module):
+    def __init__(self, target_shaper=ReshapeChannels(nn.Identity(), in_channels=1280, out_channels=64,
+                                                     kernel_size=1, padding=0, activation=nn.Identity, flat=False),
+                 k=2, ignore=3, N=2, reduction='mean'):
+        super().__init__()
+        self.k = k
+        self.ignore = ignore
+        self.N = N
+        self.target_shaper = target_shaper
+        self.reduction = reduction
+
+    def forward(self, x, y):
+        if self.target_shaper is not None:
+            y = self.target_shaper(y)
+        loss = 0
+        encoding_size = y.shape[1]
+        col_inds = torch.arange(x.shape[2]).long()
+        for i in range(self.k):
+            prediction = x[:, i *
+                           encoding_size:(i+1) * encoding_size, :, :].clone()
+            col_inds = (col_inds + 1) % x.shape[2]
+            true_target = y[:, :, col_inds, :].clone()
+            true_scalar = torch.exp(torch.sum(prediction * true_target, dim=1))
+
+            false_scalar = true_scalar.clone()
+            for j in range(self.N):
+                false_target = y[torch.randperm(
+                    x.shape[0]), :, :, :].clone()
+                false_target = false_target[:, :,
+                                            torch.randperm(x.shape[2]), :].clone()
+                false_scalar += torch.exp(torch.sum(prediction *
+                                                    false_target, dim=1))
+            ratio = true_scalar / (false_scalar + 1e-7)
+            ratio = ratio[:, self.ignore:(ratio.shape[1] - (i+1)), :]
+            if self.reduction == 'mean':
+                loss += torch.mean(ratio)
+            elif self.reduction == 'sum':
+                loss += torch.sum(ratio)
+            else:
+                raise NotImplementedError("Reduction type not implemented.")
+
+        return loss
+
+
+class Batch2Image(nn.Module):
+    def __init__(self, backbone=None, new_shape=(8, 8)):
+        # Expects BxCx1x1x1...., should be made more robust
         super().__init__()
         if backbone is None:
             raise NotImplementedError(
                 "You need to specify a backbone network.")
         self.backbone = backbone
-        self.model = nn.Sequential(nn.Conv2d(
-            in_channels, out_channels, kernel_size, stride, padding, groups=groups), activation())
-        self.flat = flat
+        self.new_shape = new_shape
+        self.split = new_shape[0] * new_shape[1]
 
     def forward(self, x):
-        x = self.backbone(x)
-        if self.flat:
-            return self.model(x).reshape(x.shape[0], -1)
-        else:
-            return self.model(x)
+        x = self.backbone(x).squeeze()
+        x = torch.stack(torch.split(x, self.split, dim=0))
+        x = x.reshape(x.shape[0], self.new_shape[0],
+                      self.new_shape[1], -1).permute(0, 3, 1, 2)
+        return x
+
+
+class CroppedSiamese(nn.Module):
+    def __init__(self, backbone=None, half_crop_size=(25, 25)):
+        super().__init__()
+        if backbone is None:
+            raise NotImplementedError(
+                "You need to specify a backbone network.")
+        self.backbone = backbone
+        self.half_crop_size = half_crop_size
+
+    def forward(self, x):
+        # Way faster then sequential implementation
+        n_x = x.shape[2] // self.half_crop_size[0]
+        n_y = x.shape[3] // self.half_crop_size[1]
+
+        crops = []
+        for i in range(n_x):
+            for j in range(n_y):
+                crops.append(x[:, :, i * self.half_crop_size: (i+2) * self.half_crop_size,
+                               j * self.half_crop_size: (j+2) * self.half_crop_size])
+
+        crops = torch.cat(crops, dim=0)
+        print(crops.shape)
+
+        return self.model(crops)
 
 
 class CombinedNet(nn.Module):
@@ -154,6 +264,15 @@ class CombinedNet(nn.Module):
         model_dict.update(pretrained_dict)
         self.model.load_state_dict(model_dict)
 
+
+class ConvMasked2d(nn.Conv2d):
+    def __init__(self, mask, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.register_buffer('mask', mask)
+
+    def forward(self, x):
+        self.weight.data *= self.mask
+        return super().forward(x)
 
 # +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 # Backbone Modules

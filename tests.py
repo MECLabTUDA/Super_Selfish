@@ -1,11 +1,12 @@
-from models import CombinedNet, Classification, ReshapeFeatures, EfficientFeatures
+from models import CombinedNet, Classification, ReshapeChannels, EfficientFeatures
 from efficientnet_pytorch import EfficientNet
 import torchvision.datasets as datasets
-from supervisors import LabelSupervisor, RotateNetSupervisor, ExemplarNetSupervisor, JigsawNetSupervisor, DenoiseNetSupervisor, ContextNetSupervisor, BiGanSupervisor, SplitBrainNetSupervisor
+from supervisors import LabelSupervisor, RotateNetSupervisor, ExemplarNetSupervisor, JigsawNetSupervisor, DenoiseNetSupervisor, ContextNetSupervisor, BiGanSupervisor, SplitBrainNetSupervisor, ContrastivePredictiveCodingSupervisor
 from torchvision import transforms
 from torch import nn
 import torch
 from torch.utils.data import random_split
+from data import siamese_collate
 
 # ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 
@@ -13,7 +14,7 @@ from torch.utils.data import random_split
 # Configuration
 # +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 # Choose supervisor
-supervisor_name = 'splitbrain'
+supervisor_name = 'contrastive'
 lr = 1e-3
 epochs = 50
 batch_size = 32
@@ -32,7 +33,7 @@ train_dataset, val_dataset = random_split(datasets.CIFAR10(root='./datasets/', t
                                           generator=torch.Generator().manual_seed(42))
 test_dataset = datasets.CIFAR10(root='./datasets/', train=False,
                                 download=False, transform=transforms.Resize((225, 225)))
-
+collate_fn = None
 # +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 # Self Supervision
 # +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
@@ -51,10 +52,14 @@ elif supervisor_name == 'bi':
     supervisor = BiGanSupervisor(train_dataset).to(device)
 elif supervisor_name == 'splitbrain':
     supervisor = SplitBrainNetSupervisor(train_dataset).to(device)
+elif supervisor_name == 'contrastive':
+    supervisor = ContrastivePredictiveCodingSupervisor(
+        train_dataset).to(device)
+    collate_fn = siamese_collate
 
 # Start training
 supervisor.supervise(lr=lr, epochs=epochs,
-                     batch_size=batch_size, name="store/base_" + supervisor_name, pretrained=False)
+                     batch_size=batch_size, name="store/base_" + supervisor_name, pretrained=False, collate_fn=collate_fn)
 
 
 # ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
@@ -77,7 +82,7 @@ supervisor.supervise(lr=lr, epochs=epochs,
 # Train clean pretrained EfficientNet
 # +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 # Train on "right" target
-backbone = ReshapeFeatures(EfficientFeatures())
+backbone = ReshapeChannels(EfficientFeatures())
 predictor = Classification([4096, 1024, 256, 10])
 combined = CombinedNet(backbone, predictor).to(device)
 
