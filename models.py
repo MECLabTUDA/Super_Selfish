@@ -161,7 +161,7 @@ class InfoNCE(nn.Module):
         self.ignore = ignore
         self.N = N
         self.target_shaper = target_shaper
-        self.reduction = reduction
+        self.loss = nn.CrossEntropyLoss(reduction=reduction)
 
     def forward(self, x, y):
         if self.target_shaper is not None:
@@ -176,22 +176,20 @@ class InfoNCE(nn.Module):
             true_target = y[:, :, col_inds, :].clone()
             true_scalar = torch.exp(torch.sum(prediction * true_target, dim=1))
 
-            false_scalar = true_scalar.clone()
+            full_scalar = [true_scalar]
             for j in range(self.N):
                 false_target = y[torch.randperm(
                     x.shape[0]), :, :, :].clone()
                 false_target = false_target[:, :,
                                             torch.randperm(x.shape[2]), :].clone()
-                false_scalar += torch.exp(torch.sum(prediction *
-                                                    false_target, dim=1))
-            ratio = true_scalar / (false_scalar + 1e-7)
-            ratio = ratio[:, self.ignore:(ratio.shape[1] - (i+1)), :]
-            if self.reduction == 'mean':
-                loss += torch.mean(ratio)
-            elif self.reduction == 'sum':
-                loss += torch.sum(ratio)
-            else:
-                raise NotImplementedError("Reduction type not implemented.")
+                full_scalar.append(torch.exp(torch.sum(prediction *
+                                                       false_target, dim=1)))
+            full_scalar = torch.stack(full_scalar).permute(1, 0, 2, 3)
+            full_scalar = full_scalar[:, :,
+                                      self.ignore:(full_scalar.shape[2] - (i+1)), :]
+
+            loss += self.loss(full_scalar,
+                              torch.zeros(full_scalar.shape[0], full_scalar.shape[2], full_scalar.shape[3], device=full_scalar.device).long())
 
         return loss
 
