@@ -11,22 +11,24 @@ from colorama import Fore
 from utils import bcolors
 import numpy as np
 import copy
+from data import siamese_collate
 
 
 class Supervisor():
-    def __init__(self, model, dataset, loss=nn.CrossEntropyLoss(reduction='mean')):
+    def __init__(self, model, dataset, loss=nn.CrossEntropyLoss(reduction='mean'), collate_fn=None):
         self.model = model
         self.dataset = dataset
         self.loss = loss
+        self.collate_fn = collate_fn
 
     def supervise(self, lr=1e-3, optimizer=torch.optim.Adam, epochs=10, batch_size=32, shuffle=True,
-                  num_workers=0, name="store/base", pretrained=False, collate_fn=None, lr_scheduler=lambda optimizer: torch.optim.lr_scheduler.StepLR(optimizer, step_size=100, gamma=1.0)):
+                  num_workers=0, name="store/base", pretrained=False, lr_scheduler=lambda optimizer: torch.optim.lr_scheduler.StepLR(optimizer, step_size=100, gamma=1.0)):
         print(bcolors.OKGREEN + "Train with " +
               type(self).__name__ + bcolors.ENDC)
         self._load_pretrained(name, pretrained)
         try:
             train_loader, optimizer, lr_scheduler = self._init_data_optimizer(
-                optimizer=optimizer, batch_size=batch_size, shuffle=shuffle, num_workers=num_workers, collate_fn=collate_fn, lr=lr, lr_scheduler=lr_scheduler)
+                optimizer=optimizer, batch_size=batch_size, shuffle=shuffle, num_workers=num_workers, collate_fn=self.collate_fn, lr=lr, lr_scheduler=lr_scheduler)
             self._epochs(epochs=epochs, train_loader=train_loader,
                          optimizer=optimizer, lr_scheduler=lr_scheduler)
         finally:
@@ -363,7 +365,7 @@ class BiGanSupervisor(GanSupervisor):
 class ContrastivePredictiveCodingSupervisor(Supervisor):
     # Not the CFN of the paper for easier implementation with common backbones and, most importantly, easier reuse
     def __init__(self, dataset, half_crop_size=(int(25), int(25)),
-                 backbone=None, predictor=None, loss=CPCLoss(k=3, ignore=2).to('cuda')):
+                 backbone=None, predictor=None, loss=CPCLoss(k=3, ignore=2).to('cuda'), collate_fn=siamese_collate):
         super().__init__(CombinedNet(Batch2Image(nn.Sequential(EfficientFeatures(), nn.AvgPool2d(2)))
                                      if backbone is None else backbone,
                                      ReshapeChannels(MaskedCNN(
@@ -372,7 +374,8 @@ class ContrastivePredictiveCodingSupervisor(Supervisor):
                                      if predictor is None else predictor),
                          ContrastivePreditiveCodingDataset(
                              dataset, half_crop_size=half_crop_size),
-                         loss)
+                         loss,
+                         collate_fn)
 
     def _forward(self, data):
         inputs, _ = data

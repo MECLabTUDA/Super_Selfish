@@ -22,12 +22,17 @@ Training is as easy as:
 ```python
 
 supervisor = RotateNetSupervisor(train_dataset).to(device)
+#supervisor = RotateNetSupervisor(train_dataset).to(device)
 #supervisor = ExemplarNetSupervisor(train_dataset).to(device)
 #supervisor = JigsawNetSupervisor(train_dataset).to(device)
 #supervisor = DenoiseNetSupervisor(train_dataset).to(device)
 #supervisor = ContextNetSupervisor(train_dataset).to(device)
 #supervisor = BiGanSupervisor(train_dataset).to(device)
 #supervisor = SplitBrainNetSupervisor(train_dataset).to(device)
+#supervisor = ContrastivePredictiveCodingSupervisor(
+#        train_dataset).to(device)
+#supervisor = MomentumContrastSupervisor(train_dataset).to(device)
+#supervisor = BYOLSupervisor(train_dataset).to(device)
 # ...
 # Start training
 supervisor.supervise(lr=lr, epochs=epochs,

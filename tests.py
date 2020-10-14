@@ -9,7 +9,6 @@ from torchvision import transforms
 from torch import nn
 import torch
 from torch.utils.data import random_split
-from data import siamese_collate
 
 # ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 
@@ -58,7 +57,6 @@ elif supervisor_name == 'splitbrain':
 elif supervisor_name == 'contrastive':
     supervisor = ContrastivePredictiveCodingSupervisor(
         train_dataset).to(device)
-    collate_fn = siamese_collate
 elif supervisor_name == 'momentum':
     supervisor = MomentumContrastSupervisor(train_dataset).to(device)
 elif supervisor_name == 'byol':
@@ -66,7 +64,7 @@ elif supervisor_name == 'byol':
 
 # Start training
 supervisor.supervise(lr=lr, epochs=epochs,
-                     batch_size=batch_size, name="store/base_" + supervisor_name, pretrained=False, collate_fn=collate_fn)
+                     batch_size=batch_size, name="store/base_" + supervisor_name, pretrained=False)
 
 
 # ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
