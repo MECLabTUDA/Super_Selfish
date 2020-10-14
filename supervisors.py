@@ -470,3 +470,76 @@ class MomentumContrastSupervisor(Supervisor):
         finally:
             self.save(name)
             print()
+
+
+class BYOLSupervisor(Supervisor):
+    def __init__(self, dataset, transformations=['crop', 'gray', 'flip', 'jitter'], n_trans=10000, max_elms=3, p=0.5, embedding_size=64,
+                 backbone=None, predictor=None, loss=nn.CrossEntropyLoss(reduction='mean')):
+        super().__init__(CombinedNet(CombinedNet(ReshapeChannels(EfficientFeatures()), Classification(layers=[4096, 1024, 1024, embedding_size]))
+                                     if backbone is None else backbone,
+                                     Classification(
+                                         layers=[embedding_size, embedding_size * 4, embedding_size * 2, embedding_size])
+                                     if predictor is None else predictor),
+                         MomentumContrastDataset(
+                             dataset, transformations=transformations, n_trans=n_trans, max_elms=max_elms, p=p),
+                         loss)
+        self.embedding_size = embedding_size
+
+    def supervise(self, lr=1e-3, optimizer=torch.optim.Adam, epochs=10, batch_size=32, shuffle=True,
+                  num_workers=0, name="store/base", pretrained=False, collate_fn=None, K=8, m=0.999):
+        print(bcolors.OKGREEN + "Train with " +
+              type(self).__name__ + bcolors.ENDC)
+        try:
+            if pretrained:
+                self.load(name)
+        except Exception:
+            raise IOError("Could not load pretrained.")
+        try:
+            train_loader = torch.utils.data.DataLoader(self.dataset, batch_size=batch_size,
+                                                       shuffle=shuffle, num_workers=num_workers, collate_fn=collate_fn)
+            optimizer = optimizer(self.model.parameters(), lr=lr)
+            self.model_k = copy.deepcopy(self.model)
+            for epoch_id in range(epochs):
+                loss_sum = 0
+                tkb = tqdm(total=int(len(train_loader)), bar_format="{l_bar}%s{bar}%s{r_bar}" % (
+                    Fore.GREEN, Fore.RESET), desc="Batch Process Epoch " + str(epoch_id))
+
+                for batch_id, data in enumerate(train_loader):
+                    imgs1, imgs2 = data
+                    optimizer.zero_grad()
+
+                    q = self.model(imgs1.to('cuda'))
+                    with torch.no_grad():
+                        k = self.model_k.backbone(imgs2.to('cuda'))
+                        k = F.normalize(k)
+                    q = F.normalize(q)
+
+                    l_pos_1 = torch.bmm(q.view(q.shape[0], 1, q.shape[1]), k.view(
+                        k.shape[0], k.shape[1], 1)).squeeze().mean()
+
+                    q = self.model(imgs2.to('cuda'))
+                    with torch.no_grad():
+                        k = self.model_k.backbone(imgs1.to('cuda'))
+                        k = F.normalize(k)
+                    q = F.normalize(q)
+
+                    l_pos_2 = torch.bmm(q.view(q.shape[0], 1, q.shape[1]), k.view(
+                        k.shape[0], k.shape[1], 1)).squeeze().mean()
+
+                    loss = -2 * (l_pos_1 + l_pos_2)
+                    loss.backward()
+                    optimizer.step()
+                    loss_sum += loss.item()
+
+                    # There should be a better way...
+                    with torch.no_grad():
+                        for param_q, param_k in zip(self.model.parameters(), self.model_k.parameters()):
+                            param_k.data = param_k.data * m + \
+                                param_q.data * (1. - m)
+
+                    tkb.set_postfix(loss='{:3f}'.format(
+                        loss_sum / (batch_id+1)))
+                    tkb.update(1)
+        finally:
+            self.save(name)
+            print()

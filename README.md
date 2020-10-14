@@ -16,9 +16,9 @@ Currently supports:
 ### Contrastive loss
 - Contrastive Predictive Coding https://arxiv.org/pdf/1905.09272.pdf
 - Momentum Contrast (Actually V2) https://arxiv.org/pdf/1911.05722.pdf https://arxiv.org/abs/2002.05709
+- BYOL https://arxiv.org/pdf/2006.07733.pdf
 
 Training is as easy as:
-
 ```python
 
 supervisor = RotateNetSupervisor(train_dataset).to(device)
@@ -28,7 +28,7 @@ supervisor = RotateNetSupervisor(train_dataset).to(device)
 #supervisor = ContextNetSupervisor(train_dataset).to(device)
 #supervisor = BiGanSupervisor(train_dataset).to(device)
 #supervisor = SplitBrainNetSupervisor(train_dataset).to(device)
-
+# ...
 # Start training
 supervisor.supervise(lr=lr, epochs=epochs,
                      batch_size=batch_size, name="store/base_" + supervisor_name, pretrained=False)
@@ -43,3 +43,6 @@ supervisor.supervise(lr=lr, epochs=epochs,
 - Visual testing
 - CPC data augmentation
 - Layer and instance norm (Shuffled batch norm for MoCo)
+- Learning rate schedule
+- Blur
+- solarization
