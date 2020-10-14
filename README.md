@@ -16,7 +16,7 @@ Currently supports:
 ### Contrastive loss
 - Contrastive Predictive Coding https://arxiv.org/pdf/1905.09272.pdf
 - Momentum Contrast (Actually V2) https://arxiv.org/pdf/1911.05722.pdf https://arxiv.org/abs/2002.05709
-- BYOL https://arxiv.org/pdf/2006.07733.pdf
+- BYOL (CL via BN) https://arxiv.org/pdf/2006.07733.pdf
 
 Training is as easy as:
 ```python

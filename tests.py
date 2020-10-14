@@ -17,7 +17,7 @@ from data import siamese_collate
 # Configuration
 # +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 # Choose supervisor
-supervisor_name = 'byol'
+supervisor_name = 'contrastive'
 lr = 1e-3
 epochs = 50
 batch_size = 32
