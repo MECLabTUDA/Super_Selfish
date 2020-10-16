@@ -10,7 +10,7 @@ from skimage.color import lab2rgb, rgb2lab
 # +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 
 
-class MomentumContrastDataset(Dataset):
+class AugmentationDataset(Dataset):
     def __init__(self, dataset, transformations, n_trans=100, max_elms=10, p=0.1):
         self.dataset = dataset
         self.p = p
@@ -56,6 +56,15 @@ class MomentumContrastDataset(Dataset):
         img1 = transforms.functional.to_tensor(img1)
         img2 = transforms.functional.to_tensor(img2)
         return img1, img2
+
+
+class AugmentationIndexedDataset(AugmentationDataset):
+    def __init__(self, dataset, transformations, n_trans=100, max_elms=10, p=0.1):
+        super().__init__(dataset, transformations, n_trans, max_elms, p)
+
+    def __getitem__(self, idx):
+        img1, img2 = super().__getitem__(idx)
+        return img1, img2, idx
 
 
 class ContrastivePreditiveCodingDataset(Dataset):

@@ -4,7 +4,7 @@ import torchvision.datasets as datasets
 from supervisors import LabelSupervisor, RotateNetSupervisor, ExemplarNetSupervisor, \
     JigsawNetSupervisor, DenoiseNetSupervisor, ContextNetSupervisor, BiGanSupervisor, \
     SplitBrainNetSupervisor, ContrastivePredictiveCodingSupervisor, MomentumContrastSupervisor, \
-    BYOLSupervisor
+    BYOLSupervisor, InstanceDiscriminationSupervisor
 from torchvision import transforms
 from torch import nn
 import torch
@@ -16,7 +16,7 @@ from torch.utils.data import random_split
 # Configuration
 # +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 # Choose supervisor
-supervisor_name = 'contrastive'
+supervisor_name = 'momentum'
 lr = 1e-3
 epochs = 50
 batch_size = 32
@@ -54,13 +54,15 @@ elif supervisor_name == 'bi':
     supervisor = BiGanSupervisor(train_dataset).to(device)
 elif supervisor_name == 'splitbrain':
     supervisor = SplitBrainNetSupervisor(train_dataset).to(device)
-elif supervisor_name == 'contrastive':
+elif supervisor_name == 'coding':
     supervisor = ContrastivePredictiveCodingSupervisor(
         train_dataset).to(device)
 elif supervisor_name == 'momentum':
     supervisor = MomentumContrastSupervisor(train_dataset).to(device)
 elif supervisor_name == 'byol':
     supervisor = BYOLSupervisor(train_dataset).to(device)
+elif supervisor_name == 'discrimination':
+    supervisor = InstanceDiscriminationSupervisor(train_dataset).to(device)
 
 # Start training
 supervisor.supervise(lr=lr, epochs=epochs,

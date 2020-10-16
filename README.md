@@ -7,16 +7,17 @@ Currently supports:
 - RotateNet https://arxiv.org/abs/1803.07728 
   (No Context Free Network for performance reasons)
 - Jigsaw Puzzle https://arxiv.org/abs/1603.09246
-### Autoencoding
+### Predictive
 - Denoising Autoencoder https://www.cs.toronto.edu/~larocheh/publications/icml-2008-denoising-autoencoders.pdf
 - Context Autencoder https://arxiv.org/pdf/1604.07379.pdf 
 - SplitBrain Autoencoder https://arxiv.org/pdf/1611.09842.pdf
 ### Generative
 - BiGAN https://arxiv.org/pdf/1605.09782.pdf
-### Contrastive loss
-- Contrastive Predictive Coding https://arxiv.org/pdf/1905.09272.pdf
-- Momentum Contrast (Actually V2) https://arxiv.org/pdf/1911.05722.pdf https://arxiv.org/abs/2002.05709
-- BYOL (CL via BN) https://arxiv.org/pdf/2006.07733.pdf
+### Contrastive
+- Instance Discrimination https://arxiv.org/pdf/1805.01978.pdf (Memory Bank, Augmentation Task)
+- Contrastive Predictive Coding (V2) https://arxiv.org/pdf/1905.09272.pdf (Batchwise, Future Prediction Task)
+- Momentum Contrast (V2) https://arxiv.org/pdf/1911.05722.pdf https://arxiv.org/abs/2002.05709 (Qeue, Augmentation Task)
+- BYOL (CL via BN) https://arxiv.org/pdf/2006.07733.pdf (No negatives, Augmentation task)
 
 Training is as easy as:
 ```python
@@ -29,8 +30,7 @@ supervisor = RotateNetSupervisor(train_dataset).to(device)
 #supervisor = ContextNetSupervisor(train_dataset).to(device)
 #supervisor = BiGanSupervisor(train_dataset).to(device)
 #supervisor = SplitBrainNetSupervisor(train_dataset).to(device)
-#supervisor = ContrastivePredictiveCodingSupervisor(
-#        train_dataset).to(device)
+#supervisor = ContrastivePredictiveCodingSupervisor(train_dataset).to(device)
 #supervisor = MomentumContrastSupervisor(train_dataset).to(device)
 #supervisor = BYOLSupervisor(train_dataset).to(device)
 # ...

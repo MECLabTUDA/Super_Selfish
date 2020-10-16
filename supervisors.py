@@ -2,7 +2,8 @@ import torch
 from torch import nn
 from torch.nn import functional as F
 from data import visualize, RotateDataset, ExemplarDataset, JigsawDataset, DenoiseDataset, \
-    ContextDataset, BiDataset, SplitBrainDataset, ContrastivePreditiveCodingDataset, MomentumContrastDataset
+    ContextDataset, BiDataset, SplitBrainDataset, ContrastivePreditiveCodingDataset, AugmentationDataset, \
+    AugmentationIndexedDataset
 from models import ReshapeChannels, Classification, Batch2Image, GroupedCrossEntropyLoss, \
     CPCLoss, MaskedCNN, EfficientFeatures, CombinedNet, Upsampling, ChannelwiseFC, GroupedEfficientFeatures, \
     GroupedUpsampling
@@ -12,6 +13,7 @@ from utils import bcolors
 import numpy as np
 import copy
 from data import siamese_collate
+from memory import BatchedQueue, BatchedMemory
 
 
 class Supervisor():
@@ -393,7 +395,7 @@ class MomentumContrastSupervisor(Supervisor):
                                      Classification(
                                          layers=[4096, 1024, 1024, embedding_size])
                                      if predictor is None else predictor),
-                         MomentumContrastDataset(
+                         AugmentationDataset(
                              dataset, transformations=transformations, n_trans=n_trans, max_elms=max_elms, p=p),
                          loss)
         self.embedding_size = embedding_size
@@ -403,26 +405,17 @@ class MomentumContrastSupervisor(Supervisor):
     def _epochs(self, epochs, train_loader, optimizer, lr_scheduler):
         batch_size = train_loader.batch_size
         self.model_k = copy.deepcopy(self.model)
-        queue = torch.empty(
-            self.K * batch_size, self.embedding_size, requires_grad=False, device='cuda')
-        queue_pointer = 0
         # Init queue
-        with torch.no_grad():
-            for batch_id, data in enumerate(train_loader):
-                imgs1, imgs2 = data
-                k = self.model_k(imgs2.to('cuda'))
-                queue[queue_pointer *
-                      batch_size:(queue_pointer + 1) * batch_size, :] = k
-                if queue_pointer == 7:
-                    break
-                queue_pointer = (queue_pointer + 1) % self.K
+        queue = BatchedQueue(K=self.K, batch_size=batch_size,
+                             embedding_size=self.embedding_size)
+        queue.init_w_loader_and_model(
+            train_loader=train_loader, model=self.model_k)
+        queue.reset_pointer()
 
-        queue_pointer = 0
         for epoch_id in range(epochs):
             loss_sum = 0
             tkb = tqdm(total=int(len(train_loader)), bar_format="{l_bar}%s{bar}%s{r_bar}" % (
                 Fore.GREEN, Fore.RESET), desc="Batch Process Epoch " + str(epoch_id))
-            self.model_k = copy.deepcopy(self.model)
             for batch_id, data in enumerate(train_loader):
                 optimizer.zero_grad()
 
@@ -441,14 +434,10 @@ class MomentumContrastSupervisor(Supervisor):
                         param_k.data = param_k.data * self.m + \
                             param_q.data * (1. - self.m)
 
-                    queue[queue_pointer *
-                          batch_size:(queue_pointer + 1) * batch_size, :] = k
-                    queue_pointer = (queue_pointer + 1) % self.K
-
     def _forward(self, data, queue):
         imgs1, imgs2 = data
-        batch_size = imgs1.shape[0
-                                 ]
+        batch_size = imgs1.shape[0]
+
         q = self.model(imgs1.to('cuda'))
         with torch.no_grad():
             k = self.model_k(imgs2.to('cuda'))
@@ -459,11 +448,15 @@ class MomentumContrastSupervisor(Supervisor):
             k.shape[0], k.shape[1], 1)).squeeze(2)
 
         l_neg = torch.mm(
-            q, F.normalize(queue).permute(1, 0))
+            q, F.normalize(queue.data()).permute(1, 0))
         logits = torch.cat([l_pos, l_neg], dim=1)
 
         labels = torch.zeros(batch_size, device='cuda').long()
         loss = self.loss(logits, labels)
+
+        with torch.no_grad():
+            queue.enqueue(k)
+
         return loss
 
 
@@ -475,7 +468,7 @@ class BYOLSupervisor(Supervisor):
                                      Classification(
                                          layers=[embedding_size, embedding_size * 4, embedding_size * 2, embedding_size])
                                      if predictor is None else predictor),
-                         MomentumContrastDataset(
+                         AugmentationDataset(
                              dataset, transformations=transformations, n_trans=n_trans, max_elms=max_elms, p=p),
                          loss)
         self.embedding_size = embedding_size
@@ -527,4 +520,66 @@ class BYOLSupervisor(Supervisor):
             k.shape[0], k.shape[1], 1)).squeeze().mean()
 
         loss = -2 * (l_pos_1 + l_pos_2)
+        return loss
+
+
+class InstanceDiscriminationSupervisor(Supervisor):
+    def __init__(self, dataset, transformations=['crop', 'gray', 'flip', 'jitter'], n_trans=10000, max_elms=3, p=0.5, embedding_size=64, m=128,
+                 backbone=None, predictor=None, loss=nn.CrossEntropyLoss(reduction='mean')):
+        super().__init__(CombinedNet(ReshapeChannels(EfficientFeatures())
+                                     if backbone is None else backbone,
+                                     Classification(
+                                         layers=[4096, 1024, 1024, embedding_size])
+                                     if predictor is None else predictor),
+                         AugmentationIndexedDataset(
+                             dataset, transformations=transformations, n_trans=n_trans, max_elms=max_elms, p=p),
+                         loss)
+        self.embedding_size = embedding_size
+        self.m = m
+
+    def _epochs(self, epochs, train_loader, optimizer, lr_scheduler):
+        batch_size = train_loader.batch_size
+        # Init queue
+        memory = BatchedMemory(size=len(self.dataset), batch_size=batch_size,
+                               embedding_size=self.embedding_size)
+
+        for epoch_id in range(epochs):
+            loss_sum = 0
+            tkb = tqdm(total=int(len(train_loader)), bar_format="{l_bar}%s{bar}%s{r_bar}" % (
+                Fore.GREEN, Fore.RESET), desc="Batch Process Epoch " + str(epoch_id))
+            for batch_id, data in enumerate(train_loader):
+                optimizer.zero_grad()
+
+                loss = self._forward(data, memory)
+
+                loss_sum += loss.item()
+                tkb.set_postfix(loss='{:3f}'.format(
+                    loss_sum / (batch_id+1)))
+                tkb.update(1)
+
+                self._update(loss=loss, optimizer=optimizer,
+                             lr_scheduler=lr_scheduler)
+
+    def _forward(self, data, memory):
+        imgs1, imgs2, idx = data
+        batch_size = imgs1.shape[0]
+
+        q = self.model(imgs1.to('cuda'))
+        k = self.model(imgs2.to('cuda'))
+        q = F.normalize(q)
+        k = F.normalize(k)
+
+        l_pos = torch.bmm(q.view(q.shape[0], 1, q.shape[1]), k.view(
+            k.shape[0], k.shape[1], 1)).squeeze(1)
+        l_neg = torch.bmm(q.view(q.shape[0], 1, q.shape[1]), memory.data(
+            self.m).permute(0, 2, 1)).squeeze(1)
+
+        logits = torch.cat([l_pos, l_neg], dim=1)
+
+        labels = torch.zeros(batch_size, device='cuda').long()
+        loss = self.loss(logits, labels)
+
+        with torch.no_grad():
+            memory.update(k, idx)
+
         return loss
