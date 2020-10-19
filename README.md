@@ -16,7 +16,8 @@ Currently supports:
 ### Contrastive
 - Instance Discrimination https://arxiv.org/pdf/1805.01978.pdf (Memory Bank, Augmentation Task)
 - Contrastive Predictive Coding (V2) https://arxiv.org/pdf/1905.09272.pdf (Batchwise, Future Prediction Task)
-- Momentum Contrast (V2) https://arxiv.org/pdf/1911.05722.pdf https://arxiv.org/abs/2002.05709 (Qeue, Augmentation Task)
+- Momentum Contrast (V2) https://arxiv.org/pdf/1911.05722.pdf https://arxiv.org/abs/2002.05709 (Queue, Augmentation Task)
+- CMC https://arxiv.org/pdf/1906.05849.pdf (Memory Bank, Augmentation Task, Multimodal)
 - BYOL (CL via BN) https://arxiv.org/pdf/2006.07733.pdf (No negatives, Augmentation task)
 
 Training is as easy as:
@@ -45,9 +46,7 @@ supervisor.supervise(lr=lr, epochs=epochs,
 # TODOs
 - DataParallel
 - Docs
-- Visual testing
 - CPC data augmentation
 - Layer and instance norm (Shuffled batch norm for MoCo)
-- Learning rate schedule
 - Blur
 - solarization

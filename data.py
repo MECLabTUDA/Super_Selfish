@@ -34,6 +34,11 @@ class AugmentationDataset(Dataset):
             elif t == 'jitter':
                 elm_transformations.append(
                     transforms.ColorJitter(0.1, 0.1, 0.1, 0.1))
+            elif t == 'jigsaw':
+                elm_transformations.append(
+                    transforms.Lambda(lambda x: jigsaw(
+                        x, perm=[3, 8, 2, 1, 7, 4, 6, 0, 5], s=self.dataset[0][0].shape[1] // 3))
+                )
             else:
                 elm_transformations.append(t)
 
@@ -65,6 +70,24 @@ class AugmentationIndexedDataset(AugmentationDataset):
     def __getitem__(self, idx):
         img1, img2 = super().__getitem__(idx)
         return img1, img2, idx
+
+
+class AugmentationLabIndexedDataset(AugmentationIndexedDataset):
+    def __init__(self, dataset, transformations, n_trans=100, max_elms=10, p=0.1):
+        super().__init__(dataset, transformations, n_trans, max_elms, p)
+
+    def __getitem__(self, idx):
+        img1, img2, idx = super().__getitem__(idx)
+        img1, img2 = rgb2lab(img1.permute(1, 2, 0).cpu().numpy()), rgb2lab(
+            img2.permute(1, 2, 0).cpu().numpy())
+
+        img1_l, img1_ab = torch.from_numpy(img1).permute(
+            2, 0, 1)[0:1, :, :], torch.from_numpy(img1).permute(2, 0, 1)[1:, :, :]
+
+        img2_l, img2_ab = torch.from_numpy(img2).permute(
+            2, 0, 1)[0:1, :, :], torch.from_numpy(img2).permute(2, 0, 1)[1:, :, :]
+
+        return img1_l, img1_ab, img2_l, img2_ab, idx
 
 
 class ContrastivePreditiveCodingDataset(Dataset):
@@ -256,28 +279,7 @@ class JigsawDataset(Dataset):
         perm_id = np.random.choice(self.perms_per_image[idx])
         perm = self.permutations[perm_id]
         # Looking for a cleaner and more beautifull way
-        img = transforms.functional.to_pil_image(self.dataset[idx][0])
-        img_out = img.copy()
-        for n in range(9):
-            i = (n // 3) * self.s
-            j = (n % 3) * self.s
-
-            patch = transforms.functional.to_tensor(
-                self.crop(img.crop(box=(i, j, i + self.s, j + self.s))))
-            patch_mean = torch.mean(patch)
-            patch_std = torch.std(patch)
-            patch_std = 1 if patch_std == 0 else patch_std
-            normed_patch = transforms.functional.normalize(
-                patch, patch_mean, patch_std)
-            normed_patch = transforms.functional.to_pil_image(normed_patch)
-
-            i_out = (perm[n] // 3) * self.s
-            j_out = (perm[n] % 3) * self.s
-
-            img_out.paste(normed_patch, box=(
-                i_out, j_out, i_out + self.s, j_out + self.s))
-
-        img_out = transforms.functional.to_tensor(img_out)
+        img_out = jigsaw(self.dataset[idx][0], perm, self.s, self.crop)
         return img_out, perm_id
 
 # +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
@@ -296,3 +298,29 @@ def siamese_collate(data):
     img = torch.cat(transposed_data[0], 0)
     labels = torch.cat(transposed_data[1], 0)
     return img, labels
+
+
+def jigsaw(img, perm, s, crop=lambda x: x):
+    img = transforms.functional.to_pil_image(img)
+    img_out = img.copy()
+    for n in range(9):
+        i = (n // 3) * s
+        j = (n % 3) * s
+
+        patch = transforms.functional.to_tensor(
+            crop(img.crop(box=(i, j, i + s, j + s))))
+        patch_mean = torch.mean(patch)
+        patch_std = torch.std(patch)
+        patch_std = 1 if patch_std == 0 else patch_std
+        normed_patch = transforms.functional.normalize(
+            patch, patch_mean, patch_std)
+        normed_patch = transforms.functional.to_pil_image(normed_patch)
+
+        i_out = (perm[n] // 3) * s
+        j_out = (perm[n] % 3) * s
+
+        img_out.paste(normed_patch, box=(
+            i_out, j_out, i_out + s, j_out + s))
+
+    img_out = transforms.functional.to_tensor(img_out)
+    return img_out

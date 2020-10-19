@@ -3,7 +3,7 @@ from torch import nn
 from torch.nn import functional as F
 from data import visualize, RotateDataset, ExemplarDataset, JigsawDataset, DenoiseDataset, \
     ContextDataset, BiDataset, SplitBrainDataset, ContrastivePreditiveCodingDataset, AugmentationDataset, \
-    AugmentationIndexedDataset
+    AugmentationIndexedDataset, AugmentationLabIndexedDataset
 from models import ReshapeChannels, Classification, Batch2Image, GroupedCrossEntropyLoss, \
     CPCLoss, MaskedCNN, EfficientFeatures, CombinedNet, Upsampling, ChannelwiseFC, GroupedEfficientFeatures, \
     GroupedUpsampling
@@ -581,5 +581,81 @@ class InstanceDiscriminationSupervisor(Supervisor):
 
         with torch.no_grad():
             memory.update(k, idx)
+
+        return loss
+
+
+class ContrastiveMultiviewCodingSupervisor(Supervisor):
+    def __init__(self, dataset, transformations=['crop', 'gray', 'flip', 'jitter'], n_trans=10000, max_elms=3, p=0.5, embedding_size=64, m=128,
+                 backbone=None, predictor=None, loss=nn.CrossEntropyLoss(reduction='mean')):
+        super().__init__(CombinedNet(nn.Sequential(nn.Conv2d(1, 3, 1), ReshapeChannels(EfficientFeatures()))
+                                     if backbone is None else backbone,
+                                     Classification(
+                                         layers=[4096, 1024, 1024, embedding_size])
+                                     if predictor is None else predictor),
+                         AugmentationLabIndexedDataset(
+                             dataset, transformations=transformations, n_trans=n_trans, max_elms=max_elms, p=p),
+                         loss)
+        self.embedding_size = embedding_size
+        self.m = m
+
+    def _epochs(self, epochs, train_loader, optimizer, lr_scheduler):
+        batch_size = train_loader.batch_size
+        # Init queue
+        memory = BatchedMemory(size=len(self.dataset), batch_size=batch_size,
+                               embedding_size=self.embedding_size)
+        self.model_k = CombinedNet(nn.Sequential(nn.Conv2d(2, 3, 1), ReshapeChannels(EfficientFeatures())),
+                                   Classification(layers=[4096, 1024, 1024, self.embedding_size])).to('cuda')
+        for epoch_id in range(epochs):
+            loss_sum = 0
+            tkb = tqdm(total=int(len(train_loader)), bar_format="{l_bar}%s{bar}%s{r_bar}" % (
+                Fore.GREEN, Fore.RESET), desc="Batch Process Epoch " + str(epoch_id))
+            for batch_id, data in enumerate(train_loader):
+                optimizer.zero_grad()
+
+                loss = self._forward(data, memory)
+
+                loss_sum += loss.item()
+                tkb.set_postfix(loss='{:3f}'.format(
+                    loss_sum / (batch_id+1)))
+                tkb.update(1)
+
+                self._update(loss=loss, optimizer=optimizer,
+                             lr_scheduler=lr_scheduler)
+
+    def _forward(self, data, memory):
+        imgs1_l, imgs1_ab, imgs2_l, imgs2_ab, idx = data
+        batch_size = imgs1_l.shape[0]
+
+        # One way
+        q1 = self.model(imgs1_l.to('cuda'))
+        k1 = self.model_k(imgs2_ab.to('cuda'))
+        q1 = F.normalize(q1)
+        k1 = F.normalize(k1)
+
+        l_pos1 = torch.bmm(q1.view(q1.shape[0], 1, q1.shape[1]), k1.view(
+            k1.shape[0], k1.shape[1], 1)).squeeze(1)
+        l_neg1 = torch.bmm(q1.view(q1.shape[0], 1, q1.shape[1]), memory.data(
+            self.m).permute(0, 2, 1)).squeeze(1)
+        logits1 = torch.cat([l_pos1, l_neg1], dim=1)
+
+        # The other
+        q2 = self.model(imgs2_l.to('cuda'))
+        k2 = self.model_k(imgs1_ab.to('cuda'))
+        q2 = F.normalize(q2)
+        k2 = F.normalize(k2)
+
+        l_pos2 = torch.bmm(q2.view(q2.shape[0], 1, q2.shape[1]), k2.view(
+            k2.shape[0], k2.shape[1], 1)).squeeze(1)
+        l_neg2 = torch.bmm(q2.view(q1.shape[0], 1, q2.shape[1]), memory.data(
+            self.m).permute(0, 2, 1)).squeeze(1)
+        logits2 = torch.cat([l_pos2, l_neg2], dim=1)
+
+        logits = torch.cat((logits1, logits2), dim=0)
+        labels = torch.zeros(batch_size * 2, device='cuda').long()
+        loss = self.loss(logits, labels)
+
+        with torch.no_grad():
+            memory.update(k1, idx)
 
         return loss
