@@ -17,8 +17,8 @@ from memory import BatchedQueue, BatchedMemory
 
 
 class Supervisor():
-    def __init__(self, model, dataset, loss=nn.CrossEntropyLoss(reduction='mean'), collate_fn=None):
-        self.model = model
+    def __init__(self, model, dataset, loss=nn.CrossEntropyLoss(reduction='mean'), collate_fn=None, distributed=False):
+        self.model = nn.DataParallel(model) if distributed else model
         self.dataset = dataset
         self.loss = loss
         self.collate_fn = collate_fn
@@ -61,7 +61,6 @@ class Supervisor():
                 optimizer.zero_grad()
 
                 loss = self._forward(data)
-
                 loss_sum += loss.item()
                 tkb.set_postfix(loss='{:3f}'.format(
                     loss_sum / (batch_id+1)))
@@ -201,7 +200,7 @@ class RotateNetSupervisor(Supervisor):
         super().__init__(CombinedNet(ReshapeChannels(EfficientFeatures())
                                      if backbone is None else backbone,
                                      Classification(
-                                         layers=[4096, 1024, 256, len(rotations)])
+                                         layers=[3136, 1024, 256, len(rotations)])
                                      if predictor is None else predictor),
                          RotateDataset(dataset, rotations=rotations),
                          loss)
@@ -213,7 +212,7 @@ class ExemplarNetSupervisor(Supervisor):
         super().__init__(CombinedNet(ReshapeChannels(EfficientFeatures())
                                      if backbone is None else backbone,
                                      Classification(
-                                         layers=[4096, 1024, 1024, n_classes])
+                                         layers=[3136, 1024, 1024, n_classes])
                                      if predictor is None else predictor),
                          ExemplarDataset(
                              dataset, transformations=transformations, n_classes=n_classes, n_trans=n_trans, max_elms=max_elms, p=p),
@@ -227,7 +226,7 @@ class JigsawNetSupervisor(Supervisor):
         super().__init__(CombinedNet(ReshapeChannels(EfficientFeatures())
                                      if backbone is None else backbone,
                                      Classification(
-                                         layers=[4096, 1024, 1024, 1000])
+                                         layers=[3136, 1024, 1024, 1000])
                                      if predictor is None else predictor),
                          JigsawDataset(
                              dataset, jigsaw_path="utils/permutations_hamming_max_1000.npy", n_perms_per_image=69, crop_size=64),
@@ -271,7 +270,7 @@ class ContextNetSupervisor(GanSupervisor):
                                          layers=[1280, 512, 256, 128, 64, 3])
                                      if predictor is None else predictor),
                          CombinedNet(ReshapeChannels(EfficientFeatures()), Classification(
-                             layers=[4096,  1024, 256, 1])) if discriminator is None else discriminator,
+                             layers=[3136,  1024, 256, 1])) if discriminator is None else discriminator,
                          ContextDataset(
                              dataset, p=p, n_blocks=n_blocks, scale_range=scale_range),
                          loss,
@@ -288,7 +287,7 @@ class BiGanSupervisor(GanSupervisor):
                                          layers=[32, 128, 256, 128, 64, 3])
                                      if predictor is None else predictor),
                          CombinedNet(ReshapeChannels(EfficientFeatures(), out_channels=32), Classification(
-                             layers=[4096, 1024, 256, 1])) if discriminator is None else discriminator,
+                             layers=[3136, 1024, 256, 1])) if discriminator is None else discriminator,
                          BiDataset(
                              dataset, shape=shape, rand_gen=rand_gen),
                          loss,
@@ -366,25 +365,48 @@ class BiGanSupervisor(GanSupervisor):
 
 class ContrastivePredictiveCodingSupervisor(Supervisor):
     # Not the CFN of the paper for easier implementation with common backbones and, most importantly, easier reuse
-    def __init__(self, dataset, half_crop_size=(int(25), int(25)),
+    def __init__(self, dataset, half_crop_size=(int(28), int(28)), sides=['top', 'bottom', 'left', 'right'],
                  backbone=None, predictor=None, loss=CPCLoss(k=3, ignore=2).to('cuda'), collate_fn=siamese_collate):
-        super().__init__(CombinedNet(Batch2Image(nn.Sequential(EfficientFeatures(), nn.AvgPool2d(2)))
+        super().__init__(CombinedNet(Batch2Image(EfficientFeatures(norm_type='layer'))
                                      if backbone is None else backbone,
-                                     ReshapeChannels(MaskedCNN(
-                                         layers=[1280, 512, 256, 128, 128], mask=torch.from_numpy(np.array([[1, 1, 1], [1, 1, 1], [0, 0, 0]]))),
-                                         in_channels=128, out_channels=64 * loss.k, kernel_size=1, padding=0, activation=nn.Identity, flat=False)
+                                     nn.ModuleDict({side: ReshapeChannels(MaskedCNN(
+                                         layers=[1280, 512, 256, 128, 128], mask=torch.from_numpy(np.array([[1, 1, 1], [1, 1, 1], [0, 0, 0]])),  side=side),
+                                         in_channels=128, out_channels=64 * loss.k, kernel_size=1, padding=0, activation=nn.Identity, flat=False) for side in sides})
                                      if predictor is None else predictor),
                          ContrastivePreditiveCodingDataset(
                              dataset, half_crop_size=half_crop_size),
                          loss,
                          collate_fn)
+        self.sides = sides
 
     def _forward(self, data):
         inputs, _ = data
         encodings = self.model.backbone(inputs.to('cuda'))
-        predictions = self.model.predictor(encodings)
-        loss = self.loss(predictions, encodings)
+        # encodings = F.layer_norm(encodings.permute(
+        #    0, 2, 3, 1), encodings.shape[1:2]).permute(0, 3, 1, 2)
+        # predictions = F.layer_norm(predictions.permute(
+        #    0, 2, 3, 1), predictions.shape[1:2]).permute(0, 3, 1, 2)
+        loss = 0
+        for side in self.sides:
+            predictions = self.model.predictor[side](encodings)
+            if side == 'top':
+                encodings_a = encodings
+            elif side == 'bottom':
+                encodings_a = torch.flip(encodings, dims=[2])
+            elif side == 'right':
+                encodings_a = encodings.permute(0, 1, 3, 2)
+            elif side == 'left':
+                encodings_a = torch.flip(
+                    encodings.permute(0, 1, 3, 2), dims=[3])
+
+            loss += self.loss(predictions, encodings_a)
         return loss
+
+    def _update(self, loss, optimizer, lr_scheduler):
+        loss.backward()
+        nn.utils.clip_grad_norm_(self.model.parameters(), 0.01)
+        optimizer.step()
+        lr_scheduler.step()
 
 
 class MomentumContrastSupervisor(Supervisor):
@@ -393,7 +415,7 @@ class MomentumContrastSupervisor(Supervisor):
         super().__init__(CombinedNet(ReshapeChannels(EfficientFeatures())
                                      if backbone is None else backbone,
                                      Classification(
-                                         layers=[4096, 1024, 1024, embedding_size])
+                                         layers=[3136, 1024, 1024, embedding_size])
                                      if predictor is None else predictor),
                          AugmentationDataset(
                              dataset, transformations=transformations, n_trans=n_trans, max_elms=max_elms, p=p),
@@ -463,7 +485,7 @@ class MomentumContrastSupervisor(Supervisor):
 class BYOLSupervisor(Supervisor):
     def __init__(self, dataset, transformations=['crop', 'gray', 'flip', 'jitter'], n_trans=10000, max_elms=3, p=0.5, embedding_size=64, m=0.999,
                  backbone=None, predictor=None, loss=nn.CrossEntropyLoss(reduction='mean')):
-        super().__init__(CombinedNet(CombinedNet(ReshapeChannels(EfficientFeatures()), Classification(layers=[4096, 1024, 1024, embedding_size]))
+        super().__init__(CombinedNet(CombinedNet(ReshapeChannels(EfficientFeatures()), Classification(layers=[3136, 1024, 1024, embedding_size]))
                                      if backbone is None else backbone,
                                      Classification(
                                          layers=[embedding_size, embedding_size * 4, embedding_size * 2, embedding_size])
@@ -524,18 +546,19 @@ class BYOLSupervisor(Supervisor):
 
 
 class InstanceDiscriminationSupervisor(Supervisor):
-    def __init__(self, dataset, transformations=['crop', 'gray', 'flip', 'jitter'], n_trans=10000, max_elms=3, p=0.5, embedding_size=64, m=128,
+    def __init__(self, dataset, transformations=['crop', 'gray', 'flip', 'jitter'], n_trans=10000, max_elms=3, p=0.5, embedding_size=128, m=3136, t=0.03,
                  backbone=None, predictor=None, loss=nn.CrossEntropyLoss(reduction='mean')):
         super().__init__(CombinedNet(ReshapeChannels(EfficientFeatures())
                                      if backbone is None else backbone,
                                      Classification(
-                                         layers=[4096, 1024, 1024, embedding_size])
+                                         layers=[3136, 1024, 1024, embedding_size])
                                      if predictor is None else predictor),
                          AugmentationIndexedDataset(
                              dataset, transformations=transformations, n_trans=n_trans, max_elms=max_elms, p=p),
                          loss)
         self.embedding_size = embedding_size
         self.m = m
+        self.t = t
 
     def _epochs(self, epochs, train_loader, optimizer, lr_scheduler):
         batch_size = train_loader.batch_size
@@ -570,9 +593,9 @@ class InstanceDiscriminationSupervisor(Supervisor):
         k = F.normalize(k)
 
         l_pos = torch.bmm(q.view(q.shape[0], 1, q.shape[1]), k.view(
-            k.shape[0], k.shape[1], 1)).squeeze(1)
+            k.shape[0], k.shape[1], 1)).squeeze(1) / self.t
         l_neg = torch.bmm(q.view(q.shape[0], 1, q.shape[1]), memory.data(
-            self.m).permute(0, 2, 1)).squeeze(1)
+            self.m).permute(0, 2, 1)).squeeze(1) / self.t
 
         logits = torch.cat([l_pos, l_neg], dim=1)
 
@@ -591,7 +614,7 @@ class ContrastiveMultiviewCodingSupervisor(Supervisor):
         super().__init__(CombinedNet(nn.Sequential(nn.Conv2d(1, 3, 1), ReshapeChannels(EfficientFeatures()))
                                      if backbone is None else backbone,
                                      Classification(
-                                         layers=[4096, 1024, 1024, embedding_size])
+                                         layers=[3136, 1024, 1024, embedding_size])
                                      if predictor is None else predictor),
                          AugmentationLabIndexedDataset(
                              dataset, transformations=transformations, n_trans=n_trans, max_elms=max_elms, p=p),
@@ -605,7 +628,7 @@ class ContrastiveMultiviewCodingSupervisor(Supervisor):
         memory = BatchedMemory(size=len(self.dataset), batch_size=batch_size,
                                embedding_size=self.embedding_size)
         self.model_k = CombinedNet(nn.Sequential(nn.Conv2d(2, 3, 1), ReshapeChannels(EfficientFeatures())),
-                                   Classification(layers=[4096, 1024, 1024, self.embedding_size])).to('cuda')
+                                   Classification(layers=[3136, 1024, 1024, self.embedding_size])).to('cuda')
         for epoch_id in range(epochs):
             loss_sum = 0
             tkb = tqdm(total=int(len(train_loader)), bar_format="{l_bar}%s{bar}%s{r_bar}" % (

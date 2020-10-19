@@ -91,7 +91,7 @@ class AugmentationLabIndexedDataset(AugmentationIndexedDataset):
 
 
 class ContrastivePreditiveCodingDataset(Dataset):
-    def __init__(self, dataset, half_crop_size=(25, 25)):
+    def __init__(self, dataset, half_crop_size=(28, 28)):
         self.dataset = dataset
         self.half_crop_size = half_crop_size
 

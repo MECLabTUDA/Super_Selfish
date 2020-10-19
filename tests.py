@@ -1,5 +1,5 @@
 from models import CombinedNet, Classification, ReshapeChannels, EfficientFeatures
-from efficientnet_pytorch import EfficientNet
+from efficientnet_pytorch.model import EfficientNet
 import torchvision.datasets as datasets
 from supervisors import LabelSupervisor, RotateNetSupervisor, ExemplarNetSupervisor, \
     JigsawNetSupervisor, DenoiseNetSupervisor, ContextNetSupervisor, BiGanSupervisor, \
@@ -16,8 +16,8 @@ from torch.utils.data import random_split
 # Configuration
 # +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 # Choose supervisor
-supervisor_name = 'multiview'
-lr = 1e-3
+supervisor_name = 'coding'
+lr = 1e-4
 epochs = 50
 batch_size = 32
 device = 'cuda'

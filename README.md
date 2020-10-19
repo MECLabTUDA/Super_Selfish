@@ -14,8 +14,8 @@ Currently supports:
 ### Generative
 - BiGAN https://arxiv.org/pdf/1605.09782.pdf
 ### Contrastive
-- Instance Discrimination https://arxiv.org/pdf/1805.01978.pdf (Memory Bank, Augmentation Task)
-- Contrastive Predictive Coding (V2) https://arxiv.org/pdf/1905.09272.pdf (Batchwise, Future Prediction Task)
+- Instance Discrimination https://arxiv.org/pdf/1805.01978.pdf (Memory Bank, We made it Augmentation Task, Only Projection head, 1 Backbone)
+- Contrastive Predictive Coding (V2) https://arxiv.org/pdf/1905.09272.pdf (Batchwise, Future Prediction Task with augmentation, Target and Projection head, 1 Backbone)
 - Momentum Contrast (V2) https://arxiv.org/pdf/1911.05722.pdf https://arxiv.org/abs/2002.05709 (Queue, Augmentation Task)
 - CMC https://arxiv.org/pdf/1906.05849.pdf (Memory Bank, Augmentation Task, Multimodal)
 - BYOL (CL via BN) https://arxiv.org/pdf/2006.07733.pdf (No negatives, Augmentation task)

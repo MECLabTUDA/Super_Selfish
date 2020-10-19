@@ -1,7 +1,7 @@
 import torch
 from torch import nn
 from torch.nn import functional as F
-from efficientnet_pytorch import EfficientNet
+from efficientnet_pytorch.model import EfficientNet
 from utils import bcolors
 import numpy as np
 
@@ -65,10 +65,11 @@ class Upsampling(nn.Module):
 
 
 class MaskedCNN(nn.Module):
-    def __init__(self, layers=[1280, 512, 256, 128, 3],  mask=torch.ones((3, 3)).to('cuda'), stride=1, padding=1, activation=nn.PReLU, batchnorm=True):
+    def __init__(self, layers=[1280, 512, 256, 128, 3],  mask=torch.ones((3, 3)).to('cuda'), stride=1,
+                 padding=1, activation=nn.PReLU, batchnorm=True, side=['top']):
         super().__init__()
         kernel_size = mask.shape[0]
-        self.model = nn.Sequential(
+        self.models = nn.Sequential(
             *[nn.Sequential(
                 ConvMasked2d(mask=torch.unsqueeze(torch.unsqueeze(mask, dim=0), dim=0),
                              in_channels=layers[i -
@@ -78,8 +79,18 @@ class MaskedCNN(nn.Module):
                 activation())
               for i in range(1, len(layers))])
 
+        self.side = side
+
     def forward(self, x):
-        return self.model(x)
+        if self.side == 'top':
+            x_a = x
+        elif self.side == 'bottom':
+            x_a = torch.flip(x, dims=[2])
+        elif self.side == 'right':
+            x_a = x.permute(0, 1, 3, 2)
+        elif self.side == 'left':
+            x_a = torch.flip(x.permute(0, 1, 3, 2), dims=[3])
+        return self.models(x_a)
 
 
 class GroupedUpsampling(nn.Module):
@@ -171,7 +182,7 @@ class CPCLoss(nn.Module):
                            encoding_size:(i+1) * encoding_size, :, :].clone()
             col_inds = (col_inds + 1) % x.shape[2]
             true_target = y[:, :, col_inds, :].clone()
-            true_scalar = torch.exp(torch.sum(prediction * true_target, dim=1))
+            true_scalar = torch.sum(prediction * true_target, dim=1)
 
             full_scalar = [true_scalar]
             for j in range(self.N):
@@ -179,8 +190,8 @@ class CPCLoss(nn.Module):
                     x.shape[0]), :, :, :].clone()
                 false_target = false_target[:, :,
                                             torch.randperm(x.shape[2]), :].clone()
-                full_scalar.append(torch.exp(torch.sum(prediction *
-                                                       false_target, dim=1)))
+                full_scalar.append(torch.sum(prediction *
+                                             false_target, dim=1))
             full_scalar = torch.stack(full_scalar).permute(1, 0, 2, 3)
             full_scalar = full_scalar[:, :,
                                       self.ignore:(full_scalar.shape[2] - (i+1)), :]
@@ -192,7 +203,7 @@ class CPCLoss(nn.Module):
 
 
 class Batch2Image(nn.Module):
-    def __init__(self, backbone=None, new_shape=(8, 8)):
+    def __init__(self, backbone=None, new_shape=(7, 7)):
         # Expects BxCx1x1x1...., should be made more robust
         super().__init__()
         if backbone is None:
@@ -275,13 +286,14 @@ class ConvMasked2d(nn.Conv2d):
 
 
 class EfficientFeatures(nn.Module):
-    def __init__(self, name='efficientnet-b0', pretrained=True):
+    def __init__(self, name='efficientnet-b0', pretrained=False, norm_type='batch'):
         super().__init__()
         print(bcolors.OKBLUE, end="")
         if pretrained:
-            self.model = EfficientNet.from_pretrained(name)
+            self.model = EfficientNet.from_pretrained(
+                name, norm_type=norm_type)
         else:
-            self.model = EfficientNet.from_name(name)
+            self.model = EfficientNet.from_name(name, norm_type=norm_type)
         print(bcolors.ENDC, end="")
 
     def forward(self, x):
@@ -289,7 +301,7 @@ class EfficientFeatures(nn.Module):
 
 
 class GroupedEfficientFeatures(nn.Module):
-    def __init__(self, name='efficientnet-b0', pretrained=True, groups=np.array([1, 2])):
+    def __init__(self, name='efficientnet-b0', pretrained=False, groups=np.array([1, 2]), norm_type='batch'):
         super().__init__()
         print(bcolors.OKBLUE, end="")
         self.groups = groups
@@ -299,12 +311,12 @@ class GroupedEfficientFeatures(nn.Module):
             self.expand = nn.ModuleList(
                 [nn.Conv2d(groups[i], 3, 1) for i in range(len(self.groups))])
             self.models = nn.ModuleList(
-                [EfficientNet.from_pretrained(name) for i in range(len(self.groups))])
+                [EfficientNet.from_pretrained(name, norm_type=norm_type) for i in range(len(self.groups))])
         else:
             self.expand = nn.ModuleList(
                 [nn.Conv2d(groups[i], 3, 1) for i in range(len(self.groups))])
             self.models = nn.ModuleList(
-                [EfficientNet.from_name(name) for i in range(len(self.groups))])
+                [EfficientNet.from_name(name, norm_type=norm_type) for i in range(len(self.groups))])
         print(bcolors.ENDC, end="")
 
     def forward(self, x):
