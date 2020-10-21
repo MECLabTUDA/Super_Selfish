@@ -19,6 +19,7 @@ Currently supports:
 - Momentum Contrast (V2) https://arxiv.org/pdf/1911.05722.pdf https://arxiv.org/abs/2002.05709 (Queue, Augmentation Task)
 - CMC https://arxiv.org/pdf/1906.05849.pdf (Memory Bank, Augmentation Task, Multimodal)
 - BYOL (CL via BN) https://arxiv.org/pdf/2006.07733.pdf (No negatives, Augmentation task)
+- PIRL https://arxiv.org/abs/1912.01991
 
 Training is as easy as:
 ```python

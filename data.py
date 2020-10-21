@@ -4,6 +4,7 @@ import numpy as np
 import torch
 import random
 from skimage.color import lab2rgb, rgb2lab
+from PIL import ImageOps as imo
 
 # +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 # Library Datasets
@@ -15,32 +16,6 @@ class AugmentationDataset(Dataset):
         self.dataset = dataset
         self.p = p
         self.n_trans = n_trans
-        elm_transformations = []
-        for t in transformations:
-            if t == 'rotation':
-                elm_transformations.append(transforms.RandomRotation(
-                    20, resample=False, expand=False, center=None, fill=None))
-            elif t == 'crop':
-                elm_transformations.append(transforms.RandomResizedCrop(
-                    dataset[0][0].shape[1:], scale=(0.5, 1.0), ratio=(0.75, 1.3333333333333333), interpolation=2))
-            elif t == 'gray':
-                elm_transformations.append(transforms.RandomGrayscale(p=1.0))
-            elif t == 'flip':
-                elm_transformations.append(
-                    transforms.RandomHorizontalFlip(1.0))
-            elif t == 'erase':
-                elm_transformations.append(transforms.Compose(
-                    [transforms.ToTensor(), transforms.RandomErasing(1.0), transforms.ToPILImage()]))
-            elif t == 'jitter':
-                elm_transformations.append(
-                    transforms.ColorJitter(0.1, 0.1, 0.1, 0.1))
-            elif t == 'jigsaw':
-                elm_transformations.append(
-                    transforms.Lambda(lambda x: jigsaw(
-                        x, perm=[3, 8, 2, 1, 7, 4, 6, 0, 5], s=self.dataset[0][0].shape[1] // 3))
-                )
-            else:
-                elm_transformations.append(t)
 
         self.transformations = []
         for _ in range(self.n_trans):
@@ -300,6 +275,10 @@ def siamese_collate(data):
     return img, labels
 
 
+# +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+# Transformations
+# +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
 def jigsaw(img, perm, s, crop=lambda x: x):
     img = transforms.functional.to_pil_image(img)
     img_out = img.copy()
@@ -324,3 +303,47 @@ def jigsaw(img, perm, s, crop=lambda x: x):
 
     img_out = transforms.functional.to_tensor(img_out)
     return img_out
+
+
+def ContrastivePredictiveCodingAugmentations(img):
+    pool1 = [transforms.RandomRotation(  # Rotation
+        30, resample=False, expand=False, center=None, fill=None),
+        transforms.RandomAffine(  # Shearing
+        0, translate=None, scale=None, shear=30, resample=False, fillcolor=0),
+        transforms.RandomAffine(  # Translate
+        0, translate=50, scale=None, shear=None, resample=False, fillcolor=0),
+        transforms.Lambda(lambda x: imo.autocontrast(x)),  # Autocontrast
+        transforms.Lambda(lambda x: imo.invert(x)),  # Invert
+        transforms.Lambda(lambda x: imo.equalize(x)),  # Equalize
+        transforms.Lambda(lambda x: imo.solarize(x)),  # Solarize
+        transforms.Lambda(lambda x: imo.posterize(
+            x, bits=int(np.random.randint(4, 8) + 1))),  # Posterize
+    ]
+    for t in transformations:
+        if t == 'rotation':
+            elm_transformations.append(transforms.RandomRotation(
+                20, resample=False, expand=False, center=None, fill=None))
+        elif t == 'crop':
+            elm_transformations.append(transforms.RandomResizedCrop(
+                dataset[0][0].shape[1:], scale=(0.5, 1.0), ratio=(0.75, 1.3333333333333333), interpolation=2))
+        elif t == 'gray':
+            elm_transformations.append(transforms.RandomGrayscale(p=1.0))
+        elif t == 'flip':
+            elm_transformations.append(
+                transforms.RandomHorizontalFlip(1.0))
+        elif t == 'erase':
+            elm_transformations.append(transforms.Compose(
+                [transforms.ToTensor(), transforms.RandomErasing(1.0), transforms.ToPILImage()]))
+        elif t == 'jitter':
+            elm_transformations.append(
+                transforms.ColorJitter(0.1, 0.1, 0.1, 0.1))
+        elif t == 'xshear':
+            elm_transformations.append(
+                transforms.RandomAffine(
+                    degrees, translate=None, scale=None, shear=None, resample=False, fillcolor=0))
+        elif t == 'jigsaw':
+            elm_transformations.append(
+                transforms.Lambda(lambda x: jigsaw(
+                    x, perm=[3, 8, 2, 1, 7, 4, 6, 0, 5], s=self.dataset[0][0].shape[1] // 3)))
+        else:
+            elm_transformations.append(t)

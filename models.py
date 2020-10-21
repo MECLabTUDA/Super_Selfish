@@ -85,11 +85,12 @@ class MaskedCNN(nn.Module):
         if self.side == 'top':
             x_a = x
         elif self.side == 'bottom':
-            x_a = torch.flip(x, dims=[2])
+            x_a = torch.flip(x, dims=[2]).contiguous()
         elif self.side == 'right':
-            x_a = x.permute(0, 1, 3, 2)
+            x_a = torch.transpose(x, 2, 3).contiguous()
         elif self.side == 'left':
-            x_a = torch.flip(x.permute(0, 1, 3, 2), dims=[3])
+            x_a = torch.flip(torch.transpose(
+                x, 2, 3).contiguous(), dims=[3]).contiguous()
         return self.models(x_a)
 
 

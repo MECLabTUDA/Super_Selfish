@@ -392,12 +392,12 @@ class ContrastivePredictiveCodingSupervisor(Supervisor):
             if side == 'top':
                 encodings_a = encodings
             elif side == 'bottom':
-                encodings_a = torch.flip(encodings, dims=[2])
+                encodings_a = torch.flip(encodings, dims=[2]).contiguous()
             elif side == 'right':
-                encodings_a = encodings.permute(0, 1, 3, 2)
+                encodings_a = torch.transpose(encodings, 2, 3).contiguous()
             elif side == 'left':
                 encodings_a = torch.flip(
-                    encodings.permute(0, 1, 3, 2), dims=[3])
+                    torch.transpose(encodings, 2, 3).contiguous(), dims=[3]).contiguous()
 
             loss += self.loss(predictions, encodings_a)
         return loss
