@@ -14,9 +14,10 @@ Currently supports 13 algorithms:
 ### Generative
 - BiGAN https://arxiv.org/pdf/1605.09782.pdf
 ### Contrastive
-- Instance Discrimination https://arxiv.org/pdf/1805.01978.pdf (Memory Bank, We made it Augmentation Task with CPC Augs, Only Projection head, 1 Backbone)
-- Contrastive Predictive Coding (V2) https://arxiv.org/pdf/1905.09272.pdf (Batchwise, Future Prediction Task with augmentation, Target and Projection head, 1 Backbone)
-- Momentum Contrast (V2) https://arxiv.org/pdf/1911.05722.pdf https://arxiv.org/abs/2002.05709 (Queue, Augmentation Task)
+- Instance Discrimination https://arxiv.org/pdf/1805.01978.pdf (Memory Bank, We made it Augmentation Task with CPC Augs, Only Projection head, 1 Backbone, No Temperature)
+- Contrastive Predictive Coding (V2) https://arxiv.org/pdf/1905.09272.pdf (Batchwise, Future Prediction Task with augmentation, Target and Projection head, 1 Backbone, No Temperature)
+- Momentum Contrast (V2) https://arxiv.org/pdf/2003.04297.pdf (Queue, Augmentation Task, Projection Head, 1 Backbone and Momentum Encoder, Temperature)
+  LayerNorm instead of ShuffledBN (on todo list)
 - CMC https://arxiv.org/pdf/1906.05849.pdf (Memory Bank, Augmentation Task, Multimodal)
 - BYOL (CL via BN) https://arxiv.org/pdf/2006.07733.pdf (No negatives, Augmentation task)
 - PIRL https://arxiv.org/abs/1912.01991
@@ -45,9 +46,6 @@ supervisor.supervise(lr=lr, epochs=epochs,
 
 
 # TODOs
-- DataParallel
+- DDistributed, ShuffledBN
 - Docs
-- CPC data augmentation
-- Layer and instance norm (Shuffled batch norm for MoCo)
-- Blur
-- solarization
+

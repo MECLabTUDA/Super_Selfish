@@ -1,6 +1,7 @@
 from torch.utils.data import Dataset, DataLoader, Subset
 from torchvision import transforms, utils
 import numpy as np
+from scipy.ndimage import gaussian_filter
 import elasticdeform
 import math
 import torch
@@ -8,6 +9,7 @@ import random
 from skimage.color import lab2rgb, rgb2lab
 from PIL import ImageOps as imo
 from PIL import ImageEnhance as ime
+from PIL import ImageFilter as imf
 
 # +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 # Library Datasets
@@ -309,6 +311,20 @@ def jigsaw(img, perm, s, crop=lambda x: x):
 
 def elastic_transform(image, sigma):
     return elasticdeform.deform_random_grid(image, axis=(0, 1), sigma=sigma)
+
+
+def MomentumContrastAugmentations(img):
+    pool = transforms.Compose([transforms.ColorJitter(0.4, 0.4, 0.4, 0.1),
+                               transforms.RandomHorizontalFlip(p=0.5),
+                               transforms.RandomGrayscale(p=0.2)])
+
+    img = pool(img)
+    # Guassian Blur
+    if np.random.uniform() < 0.5:
+        img = img.filter(imf.GaussianBlur(
+            radius=np.random.uniform(0.1, 2.0)))
+
+    return img
 
 
 def ContrastivePredictiveCodingAugmentations(img):

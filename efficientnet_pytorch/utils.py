@@ -22,9 +22,9 @@ class LayerNorm2d(nn.Module):
     def __init__(self, features, eps=1e-5):
         super().__init__()
         self.gamma = nn.Parameter(torch.ones(
-            features).cuda()).unsqueeze(-1).unsqueeze(-1)
+            features).unsqueeze(-1).unsqueeze(-1))
         self.beta = nn.Parameter(torch.zeros(
-            features).cuda()).unsqueeze(-1).unsqueeze(-1)
+            features).unsqueeze(-1).unsqueeze(-1))
         self.eps = eps
         self.features = features
 

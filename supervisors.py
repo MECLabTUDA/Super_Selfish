@@ -13,7 +13,7 @@ from utils import bcolors
 import numpy as np
 import copy
 from data import siamese_collate
-from data import ContrastivePredictiveCodingAugmentations
+from data import ContrastivePredictiveCodingAugmentations, MomentumContrastAugmentations
 from memory import BatchedQueue, BatchedMemory
 
 
@@ -411,19 +411,20 @@ class ContrastivePredictiveCodingSupervisor(Supervisor):
 
 
 class MomentumContrastSupervisor(Supervisor):
-    def __init__(self, dataset, transformations=['crop', 'gray', 'flip', 'jitter'], n_trans=10000, max_elms=3, p=0.5, embedding_size=64, K=8, m=0.999,
+    def __init__(self, dataset, transformations=['crop', 'gray', 'flip', 'jitter'], n_trans=10000, max_elms=3, p=0.5, embedding_size=64, K=8, m=0.999,  t=0.2,
                  backbone=None, predictor=None, loss=nn.CrossEntropyLoss(reduction='mean')):
-        super().__init__(CombinedNet(ReshapeChannels(EfficientFeatures())
+        super().__init__(CombinedNet(ReshapeChannels(EfficientFeatures(norm_type='layer'))
                                      if backbone is None else backbone,
                                      Classification(
                                          layers=[3136, 1024, 1024, embedding_size])
                                      if predictor is None else predictor),
                          AugmentationDataset(
-                             dataset, transformations=transformations, n_trans=n_trans, max_elms=max_elms, p=p),
+                             dataset, transformations=MomentumContrastAugmentations),
                          loss)
         self.embedding_size = embedding_size
         self.K = K
         self.m = m
+        self.t = t
 
     def _epochs(self, epochs, train_loader, optimizer, lr_scheduler):
         batch_size = train_loader.batch_size
@@ -468,10 +469,10 @@ class MomentumContrastSupervisor(Supervisor):
         q = F.normalize(q)
 
         l_pos = torch.bmm(q.view(q.shape[0], 1, q.shape[1]), k.view(
-            k.shape[0], k.shape[1], 1)).squeeze(2)
+            k.shape[0], k.shape[1], 1)).squeeze(2) / self.t
 
         l_neg = torch.mm(
-            q, F.normalize(queue.data()).permute(1, 0))
+            q, F.normalize(queue.data()).permute(1, 0)) / self.t
         logits = torch.cat([l_pos, l_neg], dim=1)
 
         labels = torch.zeros(batch_size, device='cuda').long()
