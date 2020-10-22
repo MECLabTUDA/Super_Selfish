@@ -13,6 +13,7 @@ from utils import bcolors
 import numpy as np
 import copy
 from data import siamese_collate
+from data import ContrastivePredictiveCodingAugmentations
 from memory import BatchedQueue, BatchedMemory
 
 
@@ -554,7 +555,7 @@ class InstanceDiscriminationSupervisor(Supervisor):
                                          layers=[3136, 1024, 1024, embedding_size])
                                      if predictor is None else predictor),
                          AugmentationIndexedDataset(
-                             dataset, transformations=transformations, n_trans=n_trans, max_elms=max_elms, p=p),
+                             dataset, transformations=ContrastivePredictiveCodingAugmentations),
                          loss)
         self.embedding_size = embedding_size
         self.m = m

@@ -1,10 +1,13 @@
 from torch.utils.data import Dataset, DataLoader, Subset
 from torchvision import transforms, utils
 import numpy as np
+import elasticdeform
+import math
 import torch
 import random
 from skimage.color import lab2rgb, rgb2lab
 from PIL import ImageOps as imo
+from PIL import ImageEnhance as ime
 
 # +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 # Library Datasets
@@ -12,35 +15,25 @@ from PIL import ImageOps as imo
 
 
 class AugmentationDataset(Dataset):
-    def __init__(self, dataset, transformations, n_trans=100, max_elms=10, p=0.1):
+    def __init__(self, dataset, transformations):
         self.dataset = dataset
-        self.p = p
-        self.n_trans = n_trans
-
-        self.transformations = []
-        for _ in range(self.n_trans):
-            transformation = []
-            for t in range(max_elms):
-                if random.random() < self.p:
-                    transformation.append(
-                        transforms.RandomChoice(elm_transformations))
-            self.transformations.append(transforms.Compose(transformation))
+        self.trans = transformations
 
     def __len__(self):
         return len(self.dataset)
 
     def __getitem__(self, idx):
         img = transforms.functional.to_pil_image(self.dataset[idx][0])
-        img1 = transforms.RandomChoice(self.transformations)(img)
-        img2 = transforms.RandomChoice(self.transformations)(img)
+        img1 = self.trans(img)
+        img2 = self.trans(img)
         img1 = transforms.functional.to_tensor(img1)
         img2 = transforms.functional.to_tensor(img2)
         return img1, img2
 
 
 class AugmentationIndexedDataset(AugmentationDataset):
-    def __init__(self, dataset, transformations, n_trans=100, max_elms=10, p=0.1):
-        super().__init__(dataset, transformations, n_trans, max_elms, p)
+    def __init__(self, dataset, transformations):
+        super().__init__(dataset, transformations)
 
     def __getitem__(self, idx):
         img1, img2 = super().__getitem__(idx)
@@ -81,8 +74,12 @@ class ContrastivePreditiveCodingDataset(Dataset):
         crops = []
         for i in range(n_x):
             for j in range(n_y):
-                crops.append(img[:, i * self.half_crop_size[0]: (i+2) * self.half_crop_size[0],
-                                 j * self.half_crop_size[1]: (j+2) * self.half_crop_size[1]])
+                crop = img[:, i * self.half_crop_size[0]: (i+2) * self.half_crop_size[0],
+                           j * self.half_crop_size[1]: (j+2) * self.half_crop_size[1]]
+                crop = transforms.functional.to_pil_image(crop)
+                crop = ContrastivePredictiveCodingAugmentations(crop)
+                crop = transforms.functional.to_tensor(crop)
+                crops.append(crop)
 
         crops = torch.stack(crops)
         return crops, crops
@@ -262,8 +259,13 @@ class JigsawDataset(Dataset):
 # +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 
 
-def visualize(dataset, idx=0, folder_path='visualization/'):
-    pil_img = transforms.functional.to_pil_image(dataset[0][0])
+def visualize(dataset, idx=0, folder_path='visualization/', batched=False):
+    if batched:
+        img = dataset[0][0][0]
+    else:
+        img = dataset[0][0]
+
+    pil_img = transforms.functional.to_pil_image(img)
     pil_img.save(folder_path + type(dataset).__name__ +
                  "-" + str(idx) + ".png")
 
@@ -305,45 +307,55 @@ def jigsaw(img, perm, s, crop=lambda x: x):
     return img_out
 
 
+def elastic_transform(image, sigma):
+    return elasticdeform.deform_random_grid(image, axis=(0, 1), sigma=sigma)
+
+
 def ContrastivePredictiveCodingAugmentations(img):
-    pool1 = [transforms.RandomRotation(  # Rotation
+    # We use transformations as traceable
+    # https://arxiv.org/pdf/1805.09501.pdf
+    pool = [transforms.RandomRotation(  # Rotation
         30, resample=False, expand=False, center=None, fill=None),
         transforms.RandomAffine(  # Shearing
         0, translate=None, scale=None, shear=30, resample=False, fillcolor=0),
         transforms.RandomAffine(  # Translate
-        0, translate=50, scale=None, shear=None, resample=False, fillcolor=0),
+        0, translate=(0.3, 0.3), scale=None, shear=None, resample=False, fillcolor=0),
         transforms.Lambda(lambda x: imo.autocontrast(x)),  # Autocontrast
         transforms.Lambda(lambda x: imo.invert(x)),  # Invert
         transforms.Lambda(lambda x: imo.equalize(x)),  # Equalize
         transforms.Lambda(lambda x: imo.solarize(x)),  # Solarize
         transforms.Lambda(lambda x: imo.posterize(
             x, bits=int(np.random.randint(4, 8) + 1))),  # Posterize
+        transforms.Lambda(lambda x: ime.Color(
+            img).enhance(np.random.uniform())),  # Color
+        transforms.Lambda(lambda x: ime.Brightness(
+            img).enhance(np.random.uniform())),  # Brightness
+        transforms.Lambda(lambda x: ime.Contrast(
+            img).enhance(np.random.uniform())),  # Contrast
+        transforms.Lambda(lambda x: ime.Sharpness(
+            img).enhance(np.random.uniform())),  # Sharpness
+        transforms.Compose(  # Set black
+        [transforms.ToTensor(), transforms.RandomErasing(1.0), transforms.ToPILImage()])
     ]
-    for t in transformations:
-        if t == 'rotation':
-            elm_transformations.append(transforms.RandomRotation(
-                20, resample=False, expand=False, center=None, fill=None))
-        elif t == 'crop':
-            elm_transformations.append(transforms.RandomResizedCrop(
-                dataset[0][0].shape[1:], scale=(0.5, 1.0), ratio=(0.75, 1.3333333333333333), interpolation=2))
-        elif t == 'gray':
-            elm_transformations.append(transforms.RandomGrayscale(p=1.0))
-        elif t == 'flip':
-            elm_transformations.append(
-                transforms.RandomHorizontalFlip(1.0))
-        elif t == 'erase':
-            elm_transformations.append(transforms.Compose(
-                [transforms.ToTensor(), transforms.RandomErasing(1.0), transforms.ToPILImage()]))
-        elif t == 'jitter':
-            elm_transformations.append(
-                transforms.ColorJitter(0.1, 0.1, 0.1, 0.1))
-        elif t == 'xshear':
-            elm_transformations.append(
-                transforms.RandomAffine(
-                    degrees, translate=None, scale=None, shear=None, resample=False, fillcolor=0))
-        elif t == 'jigsaw':
-            elm_transformations.append(
-                transforms.Lambda(lambda x: jigsaw(
-                    x, perm=[3, 8, 2, 1, 7, 4, 6, 0, 5], s=self.dataset[0][0].shape[1] // 3)))
-        else:
-            elm_transformations.append(t)
+
+    # 1.
+    t1 = transforms.RandomChoice(pool)
+    t2 = transforms.RandomChoice(pool)
+    t3 = transforms.RandomChoice(pool)
+
+    img = t3(t2(t1(img)))
+
+    # https://www.nature.com/articles/s41591-018-0107-6
+    # 2. Only elastic def, no shearing as this is part of pool as well as hist changes
+    if np.random.uniform() < 0.2:
+        img = transforms.functional.to_tensor(img)
+        img = torch.from_numpy(elastic_transform(img.permute(1, 2, 0).cpu(
+        ).numpy(), sigma=10.0)).permute(2, 0, 1)
+        img = transforms.functional.to_pil_image(img)
+
+    # 3. In pool
+    # 4.
+    if np.random.uniform() < 0.25:
+        img = transforms.functional.to_grayscale(img, num_output_channels=3)
+
+    return img
