@@ -18,8 +18,9 @@ Currently supports 13 algorithms:
 - Contrastive Predictive Coding (V2) https://arxiv.org/pdf/1905.09272.pdf (Batchwise, Future Prediction Task with augmentation, Target and Projection head, 1 Backbone, No Temperature)
 - Momentum Contrast (V2) https://arxiv.org/pdf/2003.04297.pdf (Queue, Augmentation Task, Projection Head, 1 Backbone and Momentum Encoder, Temperature)
   LayerNorm instead of ShuffledBN (on todo list)
-- CMC https://arxiv.org/pdf/1906.05849.pdf (Memory Bank, Augmentation Task, Multimodal)
-- BYOL (CL via BN) https://arxiv.org/pdf/2006.07733.pdf (No negatives, Augmentation task)
+- CMC https://arxiv.org/pdf/1906.05849.pdf (Memory Bank, Augmentation Task (We use CPC Aufs), Multimodal)
+  Features Only from L channel as in theory, the embeddings should be close anyway
+- BYOL (CL via BN) https://arxiv.org/pdf/2006.07733.pdf (No negatives, Augmentation task, Target and Projection head, 2 Backbones, Temperature)
 - PIRL https://arxiv.org/abs/1912.01991
 
 Training is as easy as:

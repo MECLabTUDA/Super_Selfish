@@ -42,10 +42,11 @@ class BatchedQueue():
 
 
 class BatchedMemory():
-    def __init__(self, size=128, batch_size=128, embedding_size=64, init_tensor=None):
+    def __init__(self, size=128, batch_size=128, embedding_size=64, init_tensor=None, momentum=1.0):
         self.size = size
         self.embedding_size = embedding_size
         self.batch_size = batch_size
+        self.momentum = momentum
         if init_tensor is not None:
             self.memory = init_tensor
         else:
@@ -53,7 +54,8 @@ class BatchedMemory():
                 (self.size, embedding_size), requires_grad=False, device='cuda')
 
     def update(self, k, idx):
-        self.memory[idx] = k
+        self.memory[idx] = k * self.momentum + \
+            self.memory[idx] * (1-self.momentum)
 
     def data(self, m):
         idx = np.random.choice(self.size, m * self.batch_size)

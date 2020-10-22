@@ -611,7 +611,7 @@ class InstanceDiscriminationSupervisor(Supervisor):
 
 
 class ContrastiveMultiviewCodingSupervisor(Supervisor):
-    def __init__(self, dataset, transformations=['crop', 'gray', 'flip', 'jitter'], n_trans=10000, max_elms=3, p=0.5, embedding_size=64, m=128,
+    def __init__(self, dataset, transformations=['crop', 'gray', 'flip', 'jitter'], n_trans=10000, max_elms=3, p=0.5, embedding_size=64, m=128, t=0.07,
                  backbone=None, predictor=None, loss=nn.CrossEntropyLoss(reduction='mean')):
         super().__init__(CombinedNet(nn.Sequential(nn.Conv2d(1, 3, 1), ReshapeChannels(EfficientFeatures()))
                                      if backbone is None else backbone,
@@ -619,16 +619,17 @@ class ContrastiveMultiviewCodingSupervisor(Supervisor):
                                          layers=[3136, 1024, 1024, embedding_size])
                                      if predictor is None else predictor),
                          AugmentationLabIndexedDataset(
-                             dataset, transformations=transformations, n_trans=n_trans, max_elms=max_elms, p=p),
+                             dataset, transformations=ContrastivePredictiveCodingAugmentations),
                          loss)
         self.embedding_size = embedding_size
         self.m = m
+        self.t = t
 
     def _epochs(self, epochs, train_loader, optimizer, lr_scheduler):
         batch_size = train_loader.batch_size
         # Init queue
         memory = BatchedMemory(size=len(self.dataset), batch_size=batch_size,
-                               embedding_size=self.embedding_size)
+                               embedding_size=self.embedding_size, momentum=0.5)
         self.model_k = CombinedNet(nn.Sequential(nn.Conv2d(2, 3, 1), ReshapeChannels(EfficientFeatures())),
                                    Classification(layers=[3136, 1024, 1024, self.embedding_size])).to('cuda')
         for epoch_id in range(epochs):
@@ -659,9 +660,9 @@ class ContrastiveMultiviewCodingSupervisor(Supervisor):
         k1 = F.normalize(k1)
 
         l_pos1 = torch.bmm(q1.view(q1.shape[0], 1, q1.shape[1]), k1.view(
-            k1.shape[0], k1.shape[1], 1)).squeeze(1)
+            k1.shape[0], k1.shape[1], 1)).squeeze(1) / self.t
         l_neg1 = torch.bmm(q1.view(q1.shape[0], 1, q1.shape[1]), memory.data(
-            self.m).permute(0, 2, 1)).squeeze(1)
+            self.m).permute(0, 2, 1)).squeeze(1) / self.t
         logits1 = torch.cat([l_pos1, l_neg1], dim=1)
 
         # The other
@@ -671,9 +672,9 @@ class ContrastiveMultiviewCodingSupervisor(Supervisor):
         k2 = F.normalize(k2)
 
         l_pos2 = torch.bmm(q2.view(q2.shape[0], 1, q2.shape[1]), k2.view(
-            k2.shape[0], k2.shape[1], 1)).squeeze(1)
+            k2.shape[0], k2.shape[1], 1)).squeeze(1) / self.t
         l_neg2 = torch.bmm(q2.view(q1.shape[0], 1, q2.shape[1]), memory.data(
-            self.m).permute(0, 2, 1)).squeeze(1)
+            self.m).permute(0, 2, 1)).squeeze(1) / self.t
         logits2 = torch.cat([l_pos2, l_neg2], dim=1)
 
         logits = torch.cat((logits1, logits2), dim=0)

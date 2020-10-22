@@ -43,8 +43,8 @@ class AugmentationIndexedDataset(AugmentationDataset):
 
 
 class AugmentationLabIndexedDataset(AugmentationIndexedDataset):
-    def __init__(self, dataset, transformations, n_trans=100, max_elms=10, p=0.1):
-        super().__init__(dataset, transformations, n_trans, max_elms, p)
+    def __init__(self, dataset, transformations):
+        super().__init__(dataset, transformations)
 
     def __getitem__(self, idx):
         img1, img2, idx = super().__getitem__(idx)
