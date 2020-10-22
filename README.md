@@ -1,7 +1,7 @@
 # Super Selfish
 A framework for self supervised learning on images.
 
-Currently supports:
+Currently supports 13 algorithms:
 ### Patch-based
 - ExemplarNet https://arxiv.org/abs/1406.6909
 - RotateNet https://arxiv.org/abs/1803.07728 
