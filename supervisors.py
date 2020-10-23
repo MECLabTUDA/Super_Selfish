@@ -13,7 +13,7 @@ from utils import bcolors
 import numpy as np
 import copy
 from data import siamese_collate
-from data import ContrastivePredictiveCodingAugmentations, MomentumContrastAugmentations
+from data import ContrastivePredictiveCodingAugmentations, MomentumContrastAugmentations, BYOLAugmentations
 from memory import BatchedQueue, BatchedMemory
 
 
@@ -493,7 +493,7 @@ class BYOLSupervisor(Supervisor):
                                          layers=[embedding_size, embedding_size * 4, embedding_size * 2, embedding_size])
                                      if predictor is None else predictor),
                          AugmentationDataset(
-                             dataset, transformations=transformations, n_trans=n_trans, max_elms=max_elms, p=p),
+                             dataset, transformations=BYOLAugmentations),
                          loss)
         self.embedding_size = embedding_size
         self.m = m

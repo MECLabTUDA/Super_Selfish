@@ -16,7 +16,7 @@ from torch.utils.data import random_split
 # Configuration
 # +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 # Choose supervisor
-supervisor_name = 'multiview'
+supervisor_name = 'byol'
 lr = 1e-4
 epochs = 50
 batch_size = 32

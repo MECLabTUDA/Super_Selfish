@@ -7,6 +7,7 @@ import math
 import torch
 import random
 from skimage.color import lab2rgb, rgb2lab
+from PIL import Image as im_
 from PIL import ImageOps as imo
 from PIL import ImageEnhance as ime
 from PIL import ImageFilter as imf
@@ -323,6 +324,32 @@ def MomentumContrastAugmentations(img):
     if np.random.uniform() < 0.5:
         img = img.filter(imf.GaussianBlur(
             radius=np.random.uniform(0.1, 2.0)))
+
+    return img
+
+
+def BYOLAugmentations(img):
+
+    t1 = transforms.Compose([transforms.RandomResizedCrop(img.size, scale=(
+        0.08, 1.0), ratio=(0.75, 1.3333333333333333), interpolation=im_.BICUBIC),
+        transforms.RandomHorizontalFlip(p=0.5)])
+    img = t1(img)
+
+    if np.random.uniform() < 0.8:
+        t2 = transforms.ColorJitter(
+            brightness=0.4, contrast=0.4, saturation=0.2, hue=0.1)
+        img = t2(img)
+
+    if np.random.uniform() < 0.2:
+        img = transforms.functional.to_grayscale(img, num_output_channels=3)
+
+    if np.random.uniform() < 0.3:
+        img = img.filter(imf.GaussianBlur(
+            radius=np.random.uniform(0.1, 2.0)))
+
+    if np.random.uniform() < 0.2:
+        t3 = transforms.Lambda(lambda x: imo.solarize(x))
+        img = t3(img)
 
     return img
 
