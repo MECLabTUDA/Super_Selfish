@@ -13,7 +13,7 @@ from utils import bcolors
 import numpy as np
 import copy
 from data import siamese_collate
-from data import ContrastivePredictiveCodingAugmentations, MomentumContrastAugmentations, BYOLAugmentations
+from data import ContrastivePredictiveCodingAugmentations, MomentumContrastAugmentations, BYOLAugmentations, PIRLAugmentations
 from memory import BatchedQueue, BatchedMemory
 
 
@@ -367,7 +367,7 @@ class BiGanSupervisor(GanSupervisor):
 class ContrastivePredictiveCodingSupervisor(Supervisor):
     # Not the CFN of the paper for easier implementation with common backbones and, most importantly, easier reuse
     def __init__(self, dataset, half_crop_size=(int(28), int(28)), sides=['top', 'bottom', 'left', 'right'],
-                 backbone=None, predictor=None, loss=CPCLoss(k=3, ignore=2).to('cuda'), collate_fn=siamese_collate):
+                 backbone=None, predictor=None, loss=CPCLoss(k=3, ignore=2).to('cuda')):
         super().__init__(CombinedNet(Batch2Image(EfficientFeatures(norm_type='layer'))
                                      if backbone is None else backbone,
                                      nn.ModuleDict({side: ReshapeChannels(MaskedCNN(
@@ -377,7 +377,7 @@ class ContrastivePredictiveCodingSupervisor(Supervisor):
                          ContrastivePreditiveCodingDataset(
                              dataset, half_crop_size=half_crop_size),
                          loss,
-                         collate_fn)
+                         siamese_collate)
         self.sides = sides
 
     def _forward(self, data):
@@ -557,7 +557,8 @@ class InstanceDiscriminationSupervisor(Supervisor):
                                      if predictor is None else predictor),
                          AugmentationIndexedDataset(
                              dataset, transformations=ContrastivePredictiveCodingAugmentations),
-                         loss)
+                         loss,
+                         siamese_collate)
         self.embedding_size = embedding_size
         self.m = m
         self.t = t
@@ -611,7 +612,7 @@ class InstanceDiscriminationSupervisor(Supervisor):
 
 
 class ContrastiveMultiviewCodingSupervisor(Supervisor):
-    def __init__(self, dataset, transformations=['crop', 'gray', 'flip', 'jitter'], n_trans=10000, max_elms=3, p=0.5, embedding_size=64, m=128, t=0.07,
+    def __init__(self, dataset, transformations=['crop', 'gray', 'flip', 'jitter'], n_trans=10000, max_elms=3, p=0.5, embedding_size=64, m=128, t=0.07, momentum=0.5,
                  backbone=None, predictor=None, loss=nn.CrossEntropyLoss(reduction='mean')):
         super().__init__(CombinedNet(nn.Sequential(nn.Conv2d(1, 3, 1), ReshapeChannels(EfficientFeatures()))
                                      if backbone is None else backbone,
@@ -624,12 +625,13 @@ class ContrastiveMultiviewCodingSupervisor(Supervisor):
         self.embedding_size = embedding_size
         self.m = m
         self.t = t
+        self.momentum = momentum
 
     def _epochs(self, epochs, train_loader, optimizer, lr_scheduler):
         batch_size = train_loader.batch_size
         # Init queue
         memory = BatchedMemory(size=len(self.dataset), batch_size=batch_size,
-                               embedding_size=self.embedding_size, momentum=0.5)
+                               embedding_size=self.embedding_size, momentum=self.momentum)
         self.model_k = CombinedNet(nn.Sequential(nn.Conv2d(2, 3, 1), ReshapeChannels(EfficientFeatures())),
                                    Classification(layers=[3136, 1024, 1024, self.embedding_size])).to('cuda')
         for epoch_id in range(epochs):
@@ -683,5 +685,82 @@ class ContrastiveMultiviewCodingSupervisor(Supervisor):
 
         with torch.no_grad():
             memory.update(k1, idx)
+
+        return loss
+
+
+class PIRLSupervisor(Supervisor):
+    def __init__(self, dataset, transformations=['crop', 'gray', 'flip', 'jitter'], n_trans=10000, max_elms=3, p=0.5, embedding_size=128, m=3136, t=0.07, momentum=0.5,
+                 backbone=None, predictor=None, loss=nn.CrossEntropyLoss(reduction='mean')):
+        super().__init__(CombinedNet(ReshapeChannels(EfficientFeatures())
+                                     if backbone is None else backbone,
+                                     Classification(
+                                         layers=[3136, 1024, 1024, embedding_size])
+                                     if predictor is None else predictor),
+                         AugmentationIndexedDataset(
+                             dataset, transformations=ContrastivePredictiveCodingAugmentations, transformations2=PIRLAugmentations),
+                         loss)
+        self.embedding_size = embedding_size
+        self.m = m
+        self.t = t
+        self.momentum = momentum
+
+    def _epochs(self, epochs, train_loader, optimizer, lr_scheduler):
+        batch_size = train_loader.batch_size
+        # Init queue
+        memory = BatchedMemory(size=len(self.dataset), batch_size=batch_size,
+                               embedding_size=self.embedding_size, momentum=self.momentum)
+        self.g_head = copy.deepcopy(self.model.predictor).to('cuda')
+
+        for epoch_id in range(epochs):
+            loss_sum = 0
+            tkb = tqdm(total=int(len(train_loader)), bar_format="{l_bar}%s{bar}%s{r_bar}" % (
+                Fore.GREEN, Fore.RESET), desc="Batch Process Epoch " + str(epoch_id))
+            for batch_id, data in enumerate(train_loader):
+                optimizer.zero_grad()
+
+                loss = self._forward(data, memory)
+
+                loss_sum += loss.item()
+                tkb.set_postfix(loss='{:3f}'.format(
+                    loss_sum / (batch_id+1)))
+                tkb.update(1)
+
+                self._update(loss=loss, optimizer=optimizer,
+                             lr_scheduler=lr_scheduler)
+
+    def _forward(self, data, memory):
+        imgs1, imgs2, idx = data
+        batch_size = imgs1.shape[0]
+
+        f = self.model(imgs1.to('cuda'))
+        g = self.g_head(self.model.backbone(imgs2.to('cuda')))
+        f = F.normalize(f)
+        g = F.normalize(g)
+
+        k = memory[idx]
+
+        # f
+        l_pos = torch.bmm(f.view(f.shape[0], 1, f.shape[1]), k.view(
+            k.shape[0], k.shape[1], 1)).squeeze(1) / self.t
+        l_neg = torch.bmm(f.view(f.shape[0], 1, f.shape[1]), memory.data(
+            self.m).permute(0, 2, 1)).squeeze(1) / self.t
+
+        logits_f = torch.cat([l_pos, l_neg], dim=1)
+
+        # g
+        l_pos = torch.bmm(g.view(g.shape[0], 1, g.shape[1]), k.view(
+            k.shape[0], k.shape[1], 1)).squeeze(1) / self.t
+        l_neg = torch.bmm(g.view(g.shape[0], 1, g.shape[1]), memory.data(
+            self.m).permute(0, 2, 1)).squeeze(1) / self.t
+
+        logits_g = torch.cat([l_pos, l_neg], dim=1)
+
+        logits = torch.cat((logits_f, logits_g), dim=0)
+        labels = torch.zeros(batch_size * 2, device='cuda').long()
+        loss = self.loss(logits, labels)
+
+        with torch.no_grad():
+            memory.update(f, idx)
 
         return loss

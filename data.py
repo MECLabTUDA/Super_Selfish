@@ -18,25 +18,41 @@ from PIL import ImageFilter as imf
 
 
 class AugmentationDataset(Dataset):
-    def __init__(self, dataset, transformations):
+    def __init__(self, dataset, transformations, transformations2=None, clean1=False, clean2=False):
         self.dataset = dataset
         self.trans = transformations
+        self.trans2 = transformations2
+        self.clean1 = clean1
+        self.clean2 = clean2
 
     def __len__(self):
         return len(self.dataset)
 
     def __getitem__(self, idx):
         img = transforms.functional.to_pil_image(self.dataset[idx][0])
-        img1 = self.trans(img)
-        img2 = self.trans(img)
+
+        if self.clean1:
+            img1 = img
+        else:
+            img1 = self.trans(img)
+
+        if self.clean2:
+            img2 = img
+        else:
+            if self.trans2 is None:
+                img2 = self.trans(img)
+            else:
+                img2 = self.trans2(img)
+
         img1 = transforms.functional.to_tensor(img1)
         img2 = transforms.functional.to_tensor(img2)
+
         return img1, img2
 
 
 class AugmentationIndexedDataset(AugmentationDataset):
-    def __init__(self, dataset, transformations):
-        super().__init__(dataset, transformations)
+    def __init__(self, dataset, transformations, transformations2=None, clean1=False, clean2=False):
+        super().__init__(dataset, transformations, transformations2, clean1, clean2)
 
     def __getitem__(self, idx):
         img1, img2 = super().__getitem__(idx)
@@ -44,8 +60,8 @@ class AugmentationIndexedDataset(AugmentationDataset):
 
 
 class AugmentationLabIndexedDataset(AugmentationIndexedDataset):
-    def __init__(self, dataset, transformations):
-        super().__init__(dataset, transformations)
+    def __init__(self, dataset, transformations, transformations2=None, clean1=False, clean2=False):
+        super().__init__(dataset, transformations, transformations2, clean1, clean2)
 
     def __getitem__(self, idx):
         img1, img2, idx = super().__getitem__(idx)
@@ -116,7 +132,7 @@ class SplitBrainDataset(Dataset):
         lab_lab[[1, 2], :, :] //= self.ab_step
         lab_lab[1, :, :] *= self.n_bins
         lab_lab[1, :, :] += lab_lab[2, :, :]
-        lab_lab = lab_lab[:2, :, :]
+        lab_lab = lab_lab[: 2, :, :]
 
         return lab_img.float(), lab_lab.long()
 
@@ -244,7 +260,7 @@ class JigsawDataset(Dataset):
         self.perms_per_image = np.random.choice(
             self.permutations.shape[0], len(dataset) * n_perms_per_image).reshape(len(dataset), n_perms_per_image)
         self.s = self.dataset[0][0].shape[1] // 3
-        self.crop = transforms.Compose([transforms.RandomCrop(
+        self.trans = transforms.Compose([transforms.RandomCrop(
             crop_size, pad_if_needed=True), transforms.Resize((self.s, self.s)), transforms.ColorJitter(0.1, 0.1, 0.1, 0.1)])
 
     def __len__(self):
@@ -254,7 +270,7 @@ class JigsawDataset(Dataset):
         perm_id = np.random.choice(self.perms_per_image[idx])
         perm = self.permutations[perm_id]
         # Looking for a cleaner and more beautifull way
-        img_out = jigsaw(self.dataset[idx][0], perm, self.s, self.crop)
+        img_out = jigsaw(self.dataset[idx][0], perm, self.s, self.trans)
         return img_out, perm_id
 
 # +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
@@ -284,20 +300,24 @@ def siamese_collate(data):
 # Transformations
 # +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 
-def jigsaw(img, perm, s, crop=lambda x: x):
-    img = transforms.functional.to_pil_image(img)
+def jigsaw(img, perm, s, trans=lambda x: x, normed=True):
     img_out = img.copy()
     for n in range(9):
         i = (n // 3) * s
         j = (n % 3) * s
 
         patch = transforms.functional.to_tensor(
-            crop(img.crop(box=(i, j, i + s, j + s))))
-        patch_mean = torch.mean(patch)
-        patch_std = torch.std(patch)
-        patch_std = 1 if patch_std == 0 else patch_std
-        normed_patch = transforms.functional.normalize(
-            patch, patch_mean, patch_std)
+            trans(img.crop(box=(i, j, i + s, j + s))))
+
+        if normed:
+            patch_mean = torch.mean(patch)
+            patch_std = torch.std(patch)
+            patch_std = 1 if patch_std == 0 else patch_std
+            normed_patch = transforms.functional.normalize(
+                patch, patch_mean, patch_std)
+        else:
+            normed_patch = patch
+
         normed_patch = transforms.functional.to_pil_image(normed_patch)
 
         i_out = (perm[n] // 3) * s
@@ -305,8 +325,6 @@ def jigsaw(img, perm, s, crop=lambda x: x):
 
         img_out.paste(normed_patch, box=(
             i_out, j_out, i_out + s, j_out + s))
-
-    img_out = transforms.functional.to_tensor(img_out)
     return img_out
 
 
@@ -401,4 +419,18 @@ def ContrastivePredictiveCodingAugmentations(img):
     if np.random.uniform() < 0.25:
         img = transforms.functional.to_grayscale(img, num_output_channels=3)
 
+    return img
+
+
+def PIRLAugmentations(img):
+    s = img.size[0] // 3
+    crop_size = 64
+
+    t1 = transforms.Compose([transforms.RandomCrop(
+        crop_size, pad_if_needed=True), transforms.Resize((s, s)),
+        transforms.Lambda(lambda x: ContrastivePredictiveCodingAugmentations(x))])
+    perm = [i for i in range(9)]
+    random.shuffle(perm)
+
+    img = jigsaw(img, perm, s, trans=t1, normed=False)
     return img

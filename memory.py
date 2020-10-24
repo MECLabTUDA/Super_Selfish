@@ -60,3 +60,6 @@ class BatchedMemory():
     def data(self, m):
         idx = np.random.choice(self.size, m * self.batch_size)
         return self.memory[idx].reshape(self.batch_size, m, -1)
+
+    def __getitem__(self, idx):
+        return self.memory[idx]
