@@ -50,5 +50,5 @@ If not precisley stated in the paper, we use the CPC image augmentations.
 
 # TODOs
 - DDistributed, ShuffledBN
-- Docs
+- Refactor old datasets
 - Polyak Averaging

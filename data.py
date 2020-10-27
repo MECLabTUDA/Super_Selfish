@@ -19,6 +19,18 @@ from PIL import ImageFilter as imf
 
 class AugmentationDataset(Dataset):
     def __init__(self, dataset, transformations, transformations2=None, clean1=False, clean2=False):
+        """Standard dataset for contrastive algorithms. Augments each image with given transformations.
+
+        Args:
+            dataset (torch.utils.data.Dataset)): The backbone dataset.
+            transformations (function(PIL.Image) identifier): Transformations for either img1 or img1 and img2. Must return a PIL.Image.
+            transformations2 (function(PIL.Image) identifier, optional): Transformations for img2. Defaults to None. Must return a PIL.Image if specified.
+            clean1 (bool, optional): Wether to not augment img1. Defaults to False.
+            clean2 (bool, optional): Wether to not augment img2. Defaults to False.
+
+        Returns:
+            Tuple via __getitem__: Two augmentations of an image.
+        """
         self.dataset = dataset
         self.trans = transformations
         self.trans2 = transformations2
@@ -52,6 +64,18 @@ class AugmentationDataset(Dataset):
 
 class AugmentationIndexedDataset(AugmentationDataset):
     def __init__(self, dataset, transformations, transformations2=None, clean1=False, clean2=False):
+        """Extends AugmentationDataset to return instance index.
+
+        Args:
+            dataset (torch.utils.data.Dataset)): The backbone dataset.
+            transformations (function(PIL.Image)): Transformations for either img1 or img1 and img2. Must return a PIL.Image.
+            transformations2 (function(PIL.Image), optional): Transformations for img2. Defaults to None. Must return a PIL.Image if specified.
+            clean1 (bool, optional): Wether to not augment img1. Defaults to False.
+            clean2 (bool, optional): Wether to not augment img2. Defaults to False.
+
+        Returns:
+            Tuple via __getitem__: Two augmentations of an image and the image index.
+        """
         super().__init__(dataset, transformations, transformations2, clean1, clean2)
 
     def __getitem__(self, idx):
@@ -61,6 +85,18 @@ class AugmentationIndexedDataset(AugmentationDataset):
 
 class AugmentationLabIndexedDataset(AugmentationIndexedDataset):
     def __init__(self, dataset, transformations, transformations2=None, clean1=False, clean2=False):
+        """Extends AugmentationIndexedDataset to split images into l and ab channels
+
+        Args:
+            dataset (torch.utils.data.Dataset)): The backbone dataset.
+            transformations (function(PIL.Image)): Transformations for either img1 or img1 and img2. Must return a PIL.Image.
+            transformations2 (function(PIL.Image), optional): Transformations for img2. Defaults to None. Must return a PIL.Image if specified.
+            clean1 (bool, optional): Wether to not augment img1. Defaults to False.
+            clean2 (bool, optional): Wether to not augment img2. Defaults to False.
+
+        Returns:
+            Tuple via __getitem__: Two augmentations of an image as l and ab channels as well as the image index.
+        """
         super().__init__(dataset, transformations, transformations2, clean1, clean2)
 
     def __getitem__(self, idx):
@@ -79,6 +115,12 @@ class AugmentationLabIndexedDataset(AugmentationIndexedDataset):
 
 class ContrastivePreditiveCodingDataset(Dataset):
     def __init__(self, dataset, half_crop_size=(28, 28)):
+        """CPC v2 dataset
+
+        Args:
+            dataset (torch.utils.data.Dataset)): The backbone dataset.
+            half_crop_size (tuple, optional): Half size of crops to predict. Defaults to (int(28), int(28)).
+        """
         self.dataset = dataset
         self.half_crop_size = half_crop_size
 
@@ -105,7 +147,17 @@ class ContrastivePreditiveCodingDataset(Dataset):
 
 
 class SplitBrainDataset(Dataset):
-    def __init__(self, dataset, l_step=2, l_offset=0, ab_step=26, a_offset=127, b_offset=128):
+    def __init__(self, dataset, l_step=2, l_offset=0, ab_step=26, a_offset=128, b_offset=128):
+        """Splitbrain autoencoder dataset.
+
+        Args:
+            dataset (torch.utils.data.Dataset)): The backbone dataset.
+            l_step (int, optional): l channel bin size. Defaults to 2.
+            l_offset (int, optional): l channel offset. Defaults to 0.
+            ab_step (int, optional): ab channel bin size Defaults to 26.
+            a_offset (int, optional): a channel offset. Defaults to 128.
+            b_offset (int, optional): b channel offset. Defaults to 128.
+        """
         self.dataset = dataset
         # No gammut implementation
         self.l_step = l_step
@@ -139,6 +191,11 @@ class SplitBrainDataset(Dataset):
 
 class DenoiseDataset(Dataset):
     def __init__(self, dataset, p=0.7):
+        """Denoising autoencoder dataset.
+        Args:
+            dataset (torch.utils.data.Dataset)): The backbone dataset.
+            p (float, optional): Noise level. Defaults to 0.7.
+        """
         self.dataset = dataset
         self.p = p
 
@@ -154,6 +211,13 @@ class DenoiseDataset(Dataset):
 
 class BiDataset(Dataset):
     def __init__(self, dataset, shape=(32, 8, 8), rand_gen=np.random.rand):
+        """BiGAN dataset.
+
+        Args:
+            dataset (torch.utils.data.Dataset)): The backbone dataset.
+            shape (tuple, optional): Latent vector shape. Defaults to (32, 8, 8).
+            rand_gen (np.random, optional): Random noise distribution. Defaults to np.random.rand.
+        """
         self.dataset = dataset
         self.rand_gen = rand_gen
         self.shape = shape
@@ -168,7 +232,15 @@ class BiDataset(Dataset):
 
 
 class ContextDataset(Dataset):
-    def __init__(self, dataset, p=0.3, n_blocks=10, scale_range=(0.02, 0.33)):
+    def __init__(self, dataset, p=0.3, n_blocks=10, scale_range=(0.05, 0.1)):
+        """ContextAutoencoder dataset.
+
+        Args:
+            dataset (torch.utils.data.Dataset)): The backbone dataset.
+            p (float, optional): Prob. with which a block is erased. Defaults to 0.3.
+            n_blocks (int, optional): Number of blocks that may be erased in a given image. Defaults to 10.
+            scale_range (tuple, optional): Block scale range from which a scale is sampled per block. Defaults to (0.05, 0.1).
+        """
         self.dataset = dataset
         self.n_blocks = n_blocks
         self.erase = transforms.RandomErasing(
@@ -188,6 +260,12 @@ class ContextDataset(Dataset):
 
 class RotateDataset(Dataset):
     def __init__(self, dataset, rotations=[0.0, 90.0, 180.0,  -90.0]):
+        """RotateNet dataset.
+
+        Args:
+            dataset (torch.utils.data.Dataset)): The backbone dataset.
+            rotations (list, optional): Rotations to predict. Defaults to [0.0, 90.0, 180.0,  -90.0].
+        """
         self.dataset = dataset
         self.rotations = rotations
 
@@ -204,7 +282,17 @@ class RotateDataset(Dataset):
 
 
 class ExemplarDataset(Dataset):
-    def __init__(self, dataset, transformations, n_classes=8000, n_trans=100, max_elms=10, p=0.1):
+    def __init__(self, dataset, transformations, n_classes=8000, n_trans=100, max_elms=10, p=0.5):
+        """ExemplarNet dataset.
+
+        Args:
+            dataset (torch.utils.data.Dataset): The dataset to train on.
+            transformations (list, optional): Type of elementar transformations to use.
+            n_classes (int, optional): Number of classes, i.e. the subset size of the dataset. Defaults to 8000.
+            n_trans (int, optional): Number of combined transformations. Defaults to 100.
+            max_elms (int, optional): Number of elementar transformations per combined transformation. Defaults to 10.
+            p (float, optional): Prob. of an elmentar transformation to be part of a combined transformation. Defaults to 0.5.
+        """
         # More memory efficient online implementation, even harder task
         # Processes full images, we are living in the twenties...
         # Thereby automatically capture various scales
@@ -252,6 +340,14 @@ class ExemplarDataset(Dataset):
 
 class JigsawDataset(Dataset):
     def __init__(self, dataset, jigsaw_path="utils/permutations_hamming_max_1000.npy", n_perms_per_image=69, crop_size=64):
+        """[summary]
+
+        Args:
+            dataset (torch.utils.data.Dataset)): The backbone dataset.
+            jigsaw_path (str, optional): The path to the used permutations. Defaults to "utils/permutations_hamming_max_1000.npy".
+            n_perms_per_image (int, optional): Number of permutations per image. Defaults to 69.
+            crop_size (int, optional): Crop size, implicitly determines the distance between crops. Defaults to 64.
+        """
         # More memory efficient online implementation, even harder task
         # Processes full images, we are living in the twenties...
         # Thereby automatically capture various scales
@@ -279,6 +375,8 @@ class JigsawDataset(Dataset):
 
 
 def visualize(dataset, idx=0, folder_path='visualization/', batched=False):
+    """Deprecated.
+    """
     if batched:
         img = dataset[0][0][0]
     else:
@@ -301,6 +399,18 @@ def siamese_collate(data):
 # +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 
 def jigsaw(img, perm, s, trans=lambda x: x, normed=True):
+    """Jigsaws image into crops and shuffles.
+
+    Args:
+        img (PIL.Image): Image.
+        perm ([int]): Permutation to apply.
+        s (int): Output size of each crop as well as size of area to crop from
+        trans (function(PIL.Image) identifier, optional): Augmentations on crop. Defaults to lambdax:x.
+        normed (bool, optional): Wether to norm crop. Defaults to True.
+
+    Returns:
+        PIL.Image: Output image
+    """
     img_out = img.copy()
     for n in range(9):
         i = (n // 3) * s
@@ -328,8 +438,24 @@ def jigsaw(img, perm, s, trans=lambda x: x, normed=True):
     return img_out
 
 
-def elastic_transform(image, sigma):
-    return elasticdeform.deform_random_grid(image, axis=(0, 1), sigma=sigma)
+def elastic_transform(img, sigma):
+    """Elastic 3x3 transform like for U-Nets.
+
+    Args:
+        img (PIL.Image): Image.
+        sigma (float): Std. Dev.
+
+    Returns:
+        PIL.Image: Output image
+    """
+    def t1(image, sigma): return elasticdeform.deform_random_grid(
+        image, axis=(0, 1), sigma=sigma)
+
+    img = transforms.functional.to_tensor(img)
+    img = torch.from_numpy(t1(img.permute(1, 2, 0).cpu(
+    ).numpy(), sigma=10.0)).permute(2, 0, 1)
+    img = transforms.functional.to_pil_image(img)
+    return img
 
 
 def MomentumContrastAugmentations(img):
@@ -409,10 +535,7 @@ def ContrastivePredictiveCodingAugmentations(img):
     # https://www.nature.com/articles/s41591-018-0107-6
     # 2. Only elastic def, no shearing as this is part of pool as well as hist changes
     if np.random.uniform() < 0.2:
-        img = transforms.functional.to_tensor(img)
-        img = torch.from_numpy(elastic_transform(img.permute(1, 2, 0).cpu(
-        ).numpy(), sigma=10.0)).permute(2, 0, 1)
-        img = transforms.functional.to_pil_image(img)
+        img = elastic_transform(img, sigma=10)
 
     # 3. In pool
     # 4.
