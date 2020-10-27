@@ -4,12 +4,12 @@ A unified Pytorch framework for image-based self-supervised learning.
 ## Algorithms
 Currently support of 13 algorithms:
 ### Patch-based
-- ExemplarNet https://arxiv.org/abs/1406.6909
+- ExemplarNet https://arxiv.org/abs/1406.6909  
   We use the stronger set of augmentations used in CPC and do not use gradient-based patch sampling as this does not seem to be neccessary.
   We always process full images but apply scaling and translation.
 - RotateNet https://arxiv.org/abs/1803.07728 
-  (No Context Free Network for performance reasons)
-- Jigsaw Puzzle https://arxiv.org/abs/1603.09246
+- Jigsaw Puzzle https://arxiv.org/abs/1603.09246  
+  Jigsaw processed at once for performance and simplicity
 ### Predictive
 - Denoising Autoencoder https://www.cs.toronto.edu/~larocheh/publications/icml-2008-denoising-autoencoders.pdf
 - Context Autencoder https://arxiv.org/pdf/1604.07379.pdf 
@@ -17,14 +17,20 @@ Currently support of 13 algorithms:
 ### Generative
 - BiGAN https://arxiv.org/pdf/1605.09782.pdf
 ### Contrastive
-- Instance Discrimination https://arxiv.org/pdf/1805.01978.pdf (Memory Bank, We made it Augmentation Task with CPC Augs, Only Projection head, 1 Backbone, No Temperature)
-- Contrastive Predictive Coding (V2) https://arxiv.org/pdf/1905.09272.pdf (Batchwise, Future Prediction Task with augmentation, Target and Projection head, 1 Backbone, No Temperature)
-- Momentum Contrast (V2) https://arxiv.org/pdf/2003.04297.pdf (Queue, Augmentation Task, Projection Head, 1 Backbone and Momentum Encoder, Temperature)
+- Instance Discrimination https://arxiv.org/pdf/1805.01978.pdf  
+  (Memory Bank, We made it Augmentation Task with CPC Augs, Only Projection head, 1 Backbone, No Temperature)
+- Contrastive Predictive Coding (V2) https://arxiv.org/pdf/1905.09272.pdf  
+  (Batchwise, Future Prediction Task with augmentation, Target and Projection head, 1 Backbone, No Temperature)
+- Momentum Contrast (V2) https://arxiv.org/pdf/2003.04297.pdf  
+  (Queue, Augmentation Task, Projection Head, 1 Backbone and Momentum Encoder, Temperature)
   LayerNorm instead of ShuffledBN (on todo list)
-- Contrastive Multiview Coding https://arxiv.org/pdf/1906.05849.pdf (Memory Bank, Augmentation Task (We use CPC Aufs), Multimodal,Target and Projection head, 2 Backbones, No Temperature)
+- Contrastive Multiview Coding https://arxiv.org/pdf/1906.05849.pdf  
+  (Memory Bank, Augmentation Task (We use CPC Aufs), Multimodal,Target and Projection head, 2 Backbones, No Temperature)
   Features Only from L channel as in theory, the embeddings should be close anyway
-- Boostrap Your Own Latent (CL via BN) https://arxiv.org/pdf/2006.07733.pdf (No negatives, Augmentation task, Target and Projection head, 2 Backbones,No Temperature)
-- PIRL https://arxiv.org/abs/1912.01991 (Memory Bank, Augmentation + Jigsaw Task, Target and Projection Head, 1 Backbone, Temperature)
+- Boostrap Your Own Latent (CL via BN) https://arxiv.org/pdf/2006.07733.pdf  
+  (No negatives, Augmentation task, Target and Projection head, 2 Backbones,No Temperature)
+- PIRL https://arxiv.org/abs/1912.01991  
+  (Memory Bank, Augmentation + Jigsaw Task, Target and Projection Head, 1 Backbone, Temperature)
   Jigsaw processed at once for performance and simplicity
 
 ## Remarks
