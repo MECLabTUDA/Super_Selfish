@@ -361,7 +361,7 @@ class ExemplarDataset(Dataset):
 
 
 class JigsawDataset(Dataset):
-    def __init__(self, dataset, transformations=ContrastivePredictiveCodingAugmentations, jigsaw_path="utils/permutations_hamming_max_1000.npy", n_perms_per_image=69, crop_size=64):
+    def __init__(self, dataset, transformations=lambda x: ContrastivePredictiveCodingAugmentations(x), jigsaw_path="utils/permutations_hamming_max_1000.npy", n_perms_per_image=69, crop_size=64):
         """Jigsaw puzzle dataset.
 
         Args:
@@ -378,7 +378,8 @@ class JigsawDataset(Dataset):
             self.permutations.shape[0], len(dataset) * n_perms_per_image).reshape(len(dataset), n_perms_per_image)
         self.s = self.dataset[0][0].shape[1] // 3
         self.trans = transforms.Compose([transforms.RandomCrop(
-            crop_size, pad_if_needed=True), transforms.Resize((self.s, self.s)), transforms.Lambda(lambda x: transformations(x))])
+            crop_size, pad_if_needed=True), transforms.Resize((self.s, self.s)),
+            transforms.Lambda(transformations)])
 
     def __len__(self):
         return len(self.dataset)
@@ -387,7 +388,9 @@ class JigsawDataset(Dataset):
         perm_id = np.random.choice(self.perms_per_image[idx])
         perm = self.permutations[perm_id]
         # Looking for a cleaner and more beautifull way
-        img_out = jigsaw(self.dataset[idx][0], perm, self.s, self.trans)
+        img_out = jigsaw(transforms.functional.to_pil_image(
+            self.dataset[idx][0]), perm, self.s, self.trans)
+        img_out = transforms.functional.to_tensor(img_out)
         return img_out, perm_id
 
 # +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++

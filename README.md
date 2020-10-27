@@ -9,7 +9,7 @@ Currently support of 13 algorithms:
   We always process full images but apply scaling and translation.
 - RotateNet https://arxiv.org/abs/1803.07728 
 - Jigsaw Puzzle https://arxiv.org/abs/1603.09246  
-  We use the stronger set of augmentations used in CPC to prevent shortcuts but sill apply random cropping within each patch to avoid border signals.  
+  We use the stronger set of augmentations used in CPC to prevent shortcuts but sill apply random cropping within each patch to avoid border signals.    
   Jigsaw processed at once for performance and simplicity.
 ### Predictive
 - Denoising Autoencoder https://www.cs.toronto.edu/~larocheh/publications/icml-2008-denoising-autoencoders.pdf
