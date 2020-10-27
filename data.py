@@ -361,25 +361,24 @@ class ExemplarDataset(Dataset):
 
 
 class JigsawDataset(Dataset):
-    def __init__(self, dataset, jigsaw_path="utils/permutations_hamming_max_1000.npy", n_perms_per_image=69, crop_size=64):
-        """[summary]
+    def __init__(self, dataset, transformations=ContrastivePredictiveCodingAugmentations, jigsaw_path="utils/permutations_hamming_max_1000.npy", n_perms_per_image=69, crop_size=64):
+        """Jigsaw puzzle dataset.
 
         Args:
             dataset (torch.utils.data.Dataset)): The backbone dataset.
+            transformations ([type], optional): Transformations in addition to random patch cropping. Defaults to ContrastivePredictiveCodingAugmentations.
             jigsaw_path (str, optional): The path to the used permutations. Defaults to "utils/permutations_hamming_max_1000.npy".
             n_perms_per_image (int, optional): Number of permutations per image. Defaults to 69.
             crop_size (int, optional): Crop size, implicitly determines the distance between crops. Defaults to 64.
         """
-        # More memory efficient online implementation, even harder task
-        # Processes full images, we are living in the twenties...
-        # Thereby automatically capture various scales
         self.dataset = dataset
         self.permutations = np.load(jigsaw_path)
+        # We fix the number of permutations per image
         self.perms_per_image = np.random.choice(
             self.permutations.shape[0], len(dataset) * n_perms_per_image).reshape(len(dataset), n_perms_per_image)
         self.s = self.dataset[0][0].shape[1] // 3
         self.trans = transforms.Compose([transforms.RandomCrop(
-            crop_size, pad_if_needed=True), transforms.Resize((self.s, self.s)), transforms.ColorJitter(0.1, 0.1, 0.1, 0.1)])
+            crop_size, pad_if_needed=True), transforms.Resize((self.s, self.s)), transforms.Lambda(lambda x: transformations(x))])
 
     def __len__(self):
         return len(self.dataset)

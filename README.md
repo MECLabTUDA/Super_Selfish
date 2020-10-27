@@ -9,7 +9,8 @@ Currently support of 13 algorithms:
   We always process full images but apply scaling and translation.
 - RotateNet https://arxiv.org/abs/1803.07728 
 - Jigsaw Puzzle https://arxiv.org/abs/1603.09246  
-  Jigsaw processed at once for performance and simplicity
+  We use the stronger set of augmentations used in CPC to prevent shortcuts but sill apply random cropping within each patch to avoid border signals.  
+  Jigsaw processed at once for performance and simplicity.
 ### Predictive
 - Denoising Autoencoder https://www.cs.toronto.edu/~larocheh/publications/icml-2008-denoising-autoencoders.pdf
 - Context Autencoder https://arxiv.org/pdf/1604.07379.pdf 
@@ -30,12 +31,8 @@ Currently support of 13 algorithms:
 - Boostrap Your Own Latent (CL via BN) https://arxiv.org/pdf/2006.07733.pdf  
   (No negatives, Augmentation task, Target and Projection head, 2 Backbones,No Temperature)
 - PIRL https://arxiv.org/abs/1912.01991  
-  (Memory Bank, Augmentation + Jigsaw Task, Target and Projection Head, 1 Backbone, Temperature)
-  Jigsaw processed at once for performance and simplicity
-
-## Remarks
-- If not precisley stated in a paper, we use the CPC image augmentations. Some augmentations or implementation details may be different to the original papers as we aim for a comparable unified framework.
-- We use an EfficientNet https://github.com/lukemelas/EfficientNet-PyTorch implementation as the defaul backbone/feature extractor. We use a customized version that can be switched from batch norm to layer norm.
+  (Memory Bank, Augmentation + Jigsaw Task, Target and Projection Head, 1 Backbone, Temperature)  
+  Jigsaw processed at once for performance and simplicity.
 
 ## Usage
 Training is as easy as:
@@ -59,9 +56,12 @@ supervisor.supervise(lr=lr, epochs=epochs,
 
 ```
 
+## Remarks
+- If not precisley stated in a paper, we use the CPC image augmentations. Some augmentations or implementation details may be different to the original papers as we aim for a comparable unified framework.
+- We use an EfficientNet https://github.com/lukemelas/EfficientNet-PyTorch implementation as the defaul backbone/feature extractor. We use a customized version that can be switched from batch norm to layer norm.
+- Please feel free to open an issue regarding bugs and/or other algorithms that should be added.
 
-
-# TODOs
-- DDistributed, ShuffledBN
+## TODOs
+- Full DDistributed support, ShuffledBN
 - Refactor old datasets
 - Polyak Averaging
