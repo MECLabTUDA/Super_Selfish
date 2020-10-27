@@ -12,6 +12,13 @@ import numpy as np
 
 class Classification(nn.Module):
     def __init__(self, layers=[3136, 1024, 256, 4], activation=nn.PReLU, batchnorm=True):
+        """Simple MLP.
+
+        Args:
+            layers (list, optional): Size of layers. Defaults to [3136, 1024, 256, 4].
+            activation (torch.nn.Module identifier, optional): Activation function identifier. Defaults to nn.PReLU.
+            batchnorm (bool, optional): Wether to use batchnorm. Defaults to True.
+        """
         super().__init__()
         self.model = nn.Sequential(
             *[nn.Sequential(
@@ -27,6 +34,17 @@ class Classification(nn.Module):
 
 class ChannelwiseFC(nn.Module):
     def __init__(self, backbone=None, layers=[64, 64, 64, 64], activation=nn.PReLU, batchnorm=True):
+        """Channelwise FC MLP as used in context autoencoders.
+
+        Args:
+            backbone (torch.nn.Module, optional): Flat network to decorate. Defaults to None.
+            layers (list, optional): Size of layers. Defaults to [64, 64, 64, 64].
+            activation (torch.nn.Module identifier, optional): Activation function identifier. Defaults to nn.PReLU.
+            batchnorm (bool, optional): Wether to use batchnorm. Defaults to True.
+
+        Raises:
+            NotImplementedError: Works only on top of another flat network.
+        """
         super().__init__()
         if backbone is None:
             raise NotImplementedError(
@@ -49,7 +67,17 @@ class ChannelwiseFC(nn.Module):
 
 
 class Upsampling(nn.Module):
-    def __init__(self, layers=[1280, 512, 256, 128, 3], kernel_size=5, stride=2, padding=2, activation=nn.ReLU, batchnorm=True):
+    def __init__(self, layers=[1280, 512, 256, 128, 3], kernel_size=5, stride=2, padding=2, activation=nn.PReLU, batchnorm=True):
+        """Standard upconvolution network.
+
+        Args:
+            layers (list, optional): Size of layers. Defaults to [1280, 512, 256, 128, 3]
+            kernel_size (int, optional): Size of kernel. Defaults to 5.
+            stride (int, optional): Size of stride. Defaults to 2.
+            padding (int, optional): Size of padding. Defaults to 2.
+            activation (torch.nn.Module identifier, optional): Activation function identifier. Defaults to nn.PReLU.
+            batchnorm (bool, optional): Wether to use batchnorm. Defaults to True.
+        """
         super().__init__()
         self.model = nn.Sequential(
             *[nn.Sequential(
@@ -67,6 +95,17 @@ class Upsampling(nn.Module):
 class MaskedCNN(nn.Module):
     def __init__(self, layers=[1280, 512, 256, 128, 3],  mask=torch.ones((3, 3)).to('cuda'), stride=1,
                  padding=1, activation=nn.PReLU, batchnorm=True, side=['top']):
+        """MaskedCNN as used for CPC v2
+
+        Args:
+            layers (list, optional): Size of layers. Defaults to [1280, 512, 256, 128, 3]
+            mask (torch.FloatTensor, optional): Horizontal mask, rotation done in forward pass. Defaults to torch.ones((3, 3)).to('cuda').
+            stride (int, optional): Size of stride. Defaults to 1.
+            padding (int, optional): Size of padding. Defaults to 1.
+            activation (torch.nn.Module identifier, optional): Activation function identifier. Defaults to nn.PReLU.
+            batchnorm (bool, optional): Wether to use batchnorm. Defaults to True.
+            side (list, optional): Which sides to use. Defaults to ['top'].
+        """
         super().__init__()
         kernel_size = mask.shape[0]
         self.models = nn.Sequential(
@@ -96,6 +135,17 @@ class MaskedCNN(nn.Module):
 
 class GroupedUpsampling(nn.Module):
     def __init__(self, layers=[1280, 512, 256, 128], groups=np.array([50, 100]), kernel_size=5, stride=2, padding=2, activation=nn.ReLU, batchnorm=True):
+        """Wraps grouping on upsampling.
+
+        Args:
+            layers (list, optional): Size of layers. Defaults to [1280, 512, 256, 128]
+            groups ([int], optional): Number of channels per group. Defaults to np.array([50, 100]).
+            kernel_size (int, optional): [description]. Defaults to 5.
+            stride (int, optional): Size of stride. Defaults to 2.
+            padding (int, optional): Size of padding. Defaults to 2.
+            activation (torch.nn.Module identifier, optional): Activation function identifier. Defaults to nn.PReLU.
+            batchnorm (bool, optional): Wether to use batchnorm. Defaults to True.
+        """
         super().__init__()
 
         self.groups = groups
@@ -126,6 +176,23 @@ class GroupedUpsampling(nn.Module):
 
 class ReshapeChannels(nn.Module):
     def __init__(self, backbone=None, in_channels=1280, out_channels=64, kernel_size=3, stride=1, padding=1, activation=nn.PReLU, groups=1, flat=True):
+        """Convolutional bottleneck (single layer)
+
+        Args:
+            backbone (torch.nn.Module, optional): ConvNet to decorate. Defaults to None.
+            in_channels (int, optional): Number of input channels. Defaults to 1280.
+            out_channels (int, optional): Number of output channels. Defaults to 64.
+            kernel_size (int, optional): Size of kernel. Defaults to 3.
+            stride (int, optional): Size of stride. Defaults to 1.
+            padding (int, optional): Size of padding. Defaults to 1.
+            activation (torch.nn.Module identifier, optional): Activation function identifier. Defaults to nn.PReLU.
+            batchnorm (bool, optional): Wether to use batchnorm. Defaults to True.
+            groups (int, optional): Number of equally sized groups. Defaults to 1.
+            flat (bool, optional): Wether to flat output. Defaults to True.
+
+        Raises:
+            NotImplementedError: Works only on top of another ConvNet
+        """
         super().__init__()
         if backbone is None:
             raise NotImplementedError(
@@ -143,8 +210,15 @@ class ReshapeChannels(nn.Module):
             return self.model(x)
 
 
-class GroupedCrossEntropyLoss(nn.Module):
+class GroupedLoss(nn.Module):
     def __init__(self, loss=nn.CrossEntropyLoss, groups=np.array([50, 100]), reduction='mean'):
+        """Loss on groups of varying size.
+
+        Args:
+            loss (torch.nn.Module, optional): Criterion. Defaults to nn.CrossEntropyLoss.
+            groups ([int], optional): Number of channels per group. Defaults to np.array([50, 100]).
+            reduction (str, optional): Reduction that is supported by loss. Defaults to 'mean'.
+        """
         super().__init__()
 
         self.groups = groups
@@ -165,6 +239,15 @@ class CPCLoss(nn.Module):
     def __init__(self, target_shaper=ReshapeChannels(nn.Identity(), in_channels=1280, out_channels=64,
                                                      kernel_size=1, padding=0, activation=nn.Identity, flat=False),
                  k=2, ignore=3, N=2, reduction='mean'):
+        """Implements CPC v2 loss.
+
+        Args:
+            target_shaper ([torch.nn.Module], optional): Target head of CPC. Defaults to ReshapeChannels(nn.Identity(), in_channels=1280, out_channels=64, kernel_size=1, padding=0, activation=nn.Identity, flat=False).
+            k (int, optional): How many rows to predict. Defaults to 2.
+            ignore (int, optional): How many rows to ignore. Defaults to 3.
+            N (int, optional): Number of false targets. Defaults to 2.
+            reduction (str, optional): Reduction that is supported by torch.nn.CrossEntropyLoss. Defaults to 'mean'.
+        """
         super().__init__()
         self.k = k
         self.ignore = ignore
@@ -205,6 +288,15 @@ class CPCLoss(nn.Module):
 
 class Batch2Image(nn.Module):
     def __init__(self, backbone=None, new_shape=(7, 7)):
+        """ Concats batch of crops into one image.
+
+        Args:
+            backbone (torch.nn.Module, optional): ConvNet to decorate. Defaults to None.
+            new_shape (tuple, optional): Output image shape. Defaults to (7, 7).
+
+        Raises:
+            NotImplementedError: Works only on top of another ConvNet.
+        """
         # Expects BxCx1x1x1...., should be made more robust
         super().__init__()
         if backbone is None:
@@ -223,7 +315,16 @@ class Batch2Image(nn.Module):
 
 
 class CroppedSiamese(nn.Module):
-    def __init__(self, backbone=None, half_crop_size=(25, 25)):
+    def __init__(self, backbone=None, half_crop_size=(28, 28)):
+        """Deprecated.
+
+        Args:
+            backbone (torch.nn.Module, optional): ConvNet to decorate. Defaults to None.
+            half_crop_size (tuple, optional): Half size of crops to predict. Defaults to (int(28), int(28)).
+
+        Raises:
+            NotImplementedError: Works only on top of another ConvNet.
+        """
         super().__init__()
         if backbone is None:
             raise NotImplementedError(
@@ -250,6 +351,14 @@ class CroppedSiamese(nn.Module):
 
 class CombinedNet(nn.Module):
     def __init__(self, backbone=None, predictor=None):
+        """Main building block of Super Selfish. Combines backbone features with a prediction head.
+        Args:
+            backbone (torch.nn.Module, optional): Backbone network. Defaults to None.
+            predictor (torch.nn.Module, optional): Prediction network. Defaults to None.
+
+        Raises:
+            NotImplementedError: Backbone and Precitor must be specified.
+        """
         super().__init__()
         if backbone is None or predictor is None:
             raise NotImplementedError(
@@ -274,6 +383,11 @@ class CombinedNet(nn.Module):
 
 class ConvMasked2d(nn.Conv2d):
     def __init__(self, mask, *args, **kwargs):
+        """Masked convolution layer, same as torch.nn.Conv2d but mask.
+
+        Args:
+            mask ([float]): Mask of size kernel_size
+        """
         super().__init__(*args, **kwargs)
         self.register_buffer('mask', mask)
 
@@ -288,6 +402,13 @@ class ConvMasked2d(nn.Conv2d):
 
 class EfficientFeatures(nn.Module):
     def __init__(self, name='efficientnet-b0', pretrained=False, norm_type='batch'):
+        """Wrapper of EfficientNet features https://github.com/lukemelas/EfficientNet-PyTorch
+
+        Args:
+            name (str, optional): EfficientNet type. Defaults to 'efficientnet-b0'.
+            pretrained (bool, optional): Wether to load pretrained weights. Defaults to False.
+            norm_type (str, optional): ADDED FROM Super Selfish, decide between 'batch' and 'layer'. Defaults to 'batch'.
+        """
         super().__init__()
         print(bcolors.OKBLUE, end="")
         if pretrained:
@@ -303,6 +424,10 @@ class EfficientFeatures(nn.Module):
 
 class GroupedEfficientFeatures(nn.Module):
     def __init__(self, name='efficientnet-b0', pretrained=False, groups=np.array([1, 2]), norm_type='batch'):
+        """Wrapps grouped EfficientNet with groups of varying size. Same parameters as EffcientFeatures but groups.
+        Args:
+            groups ([int], optional): Number of channels per group. Defaults to np.array([50, 100]).
+        """
         super().__init__()
         print(bcolors.OKBLUE, end="")
         self.groups = groups

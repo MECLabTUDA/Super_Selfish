@@ -4,7 +4,7 @@ from torch.nn import functional as F
 from data import visualize, RotateDataset, ExemplarDataset, JigsawDataset, DenoiseDataset, \
     ContextDataset, BiDataset, SplitBrainDataset, ContrastivePreditiveCodingDataset, AugmentationDataset, \
     AugmentationIndexedDataset, AugmentationLabIndexedDataset
-from models import ReshapeChannels, Classification, Batch2Image, GroupedCrossEntropyLoss, \
+from models import ReshapeChannels, Classification, Batch2Image, GroupedLoss, \
     CPCLoss, MaskedCNN, EfficientFeatures, CombinedNet, Upsampling, ChannelwiseFC, GroupedEfficientFeatures, \
     GroupedUpsampling
 from tqdm import tqdm
@@ -391,7 +391,7 @@ class DenoiseNetSupervisor(Supervisor):
 
 class SplitBrainNetSupervisor(Supervisor):
     def __init__(self, dataset, l_step=2, l_offset=0, ab_step=26, a_offset=128, b_offset=128,
-                 backbone=None, predictor=None, loss=GroupedCrossEntropyLoss()):
+                 backbone=None, predictor=None, loss=GroupedLoss()):
         """Splitbrain autoencoder https://arxiv.org/pdf/1611.09842.pdf.
 
         Args:
@@ -403,7 +403,7 @@ class SplitBrainNetSupervisor(Supervisor):
             b_offset (int, optional): b channel offset. Defaults to 128.
             backbone (torch.nn.Module, optional): Backbone network. Defaults to None, resulting in an EfficientNet backbone.
             predictor (torch.nn.Module, optional): Prediction network. Defaults to None, resulting in a standard upsampling ConvNet.
-            loss ([type], optional): The critierion to train on. Defaults to GroupedCrossEntropyLoss().
+            loss ([type], optional): The critierion to train on. Defaults to GroupedLoss().
         """
         super().__init__(CombinedNet(GroupedEfficientFeatures()
                                      if backbone is None else backbone,
