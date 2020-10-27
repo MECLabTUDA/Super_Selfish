@@ -542,12 +542,23 @@ class BiGanSupervisor(GanSupervisor):
 
 
 class ContrastivePredictiveCodingSupervisor(Supervisor):
-    def __init__(self, dataset, half_crop_size=(int(28), int(28)), sides=['top', 'bottom', 'left', 'right'],
+    def __init__(self, dataset, embedding_size=128, half_crop_size=(int(28), int(28)), sides=['top', 'bottom', 'left', 'right'],
                  backbone=None, predictor=None, loss=CPCLoss(k=3, ignore=2).to('cuda')):
+        """Contrastive Predictive Coding v2 for future prediction https://arxiv.org/pdf/1905.09272.pdf.
+
+        Args:
+            dataset (torch.utils.data.Dataset): The dataset to train on.
+            embedding_size (int, optional): Size of predicted embeddings. Defaults to 128.
+            half_crop_size (tuple, optional): Half size of crops to predict. Defaults to (int(28), int(28)).
+            sides (list, optional): From which sides to generate context. Defaults to ['top', 'bottom', 'left', 'right'].
+            backbone (torch.nn.Module, optional): Backbone network. Defaults to None, resulting in an EfficientNet backbone with LayerNorm.
+            predictor (torch.nn.Module, optional): Prediction network. Defaults to None, resulting in a MaskedCNN and a linear predictor for each side.
+            loss (torch.nn.Module, optional): The critierion to train on. Defaults to CPCLoss(k=3, ignore=2), a specific CPC loss for efficient calculation.
+        """
         super().__init__(CombinedNet(Batch2Image(EfficientFeatures(norm_type='layer'))
                                      if backbone is None else backbone,
                                      nn.ModuleDict({side: ReshapeChannels(MaskedCNN(
-                                         layers=[1280, 512, 256, 128, 128], mask=torch.from_numpy(np.array([[1, 1, 1], [1, 1, 1], [0, 0, 0]])),  side=side),
+                                         layers=[1280, 512, 256, 128, embedding_size], mask=torch.from_numpy(np.array([[1, 1, 1], [1, 1, 1], [0, 0, 0]])),  side=side),
                                          in_channels=128, out_channels=64 * loss.k, kernel_size=1, padding=0, activation=nn.Identity, flat=False) for side in sides})
                                      if predictor is None else predictor),
                          ContrastivePreditiveCodingDataset(
@@ -587,8 +598,20 @@ class ContrastivePredictiveCodingSupervisor(Supervisor):
 
 
 class MomentumContrastSupervisor(Supervisor):
-    def __init__(self, dataset, transformations=['crop', 'gray', 'flip', 'jitter'], n_trans=10000, max_elms=3, p=0.5, embedding_size=64, K=8, m=0.999,  t=0.2,
+    def __init__(self, dataset, embedding_size=128, K=8, m=0.999,  t=0.2,
                  backbone=None, predictor=None, loss=nn.CrossEntropyLoss(reduction='mean')):
+        """Momentum contrast v2 https://arxiv.org/pdf/2003.04297.pdf.
+
+        Args:
+            dataset (torch.utils.data.Dataset): The dataset to train on.
+            embedding_size (int, optional): Size of predicted embeddings. Defaults to 128.
+            K (int, optional): Size of queue in batches. Defaults to 8.
+            m (float, optional): Momentum encoder weighting parameter. Defaults to 0.999.
+            t (float, optional): Temperature. Defaults to 0.2.
+            backbone (torch.nn.Module, optional): Backbone network. Defaults to None, resulting in an EfficientNet backbone.
+            predictor (torch.nn.Module, optional): Prediction network. Defaults to None, resulting in a MLP that fits to the embeddings size.
+            loss ([type], optional): The critierion to train on. Defaults to nn.CrossEntropyLoss(reduction='mean').
+        """
         super().__init__(CombinedNet(ReshapeChannels(EfficientFeatures(norm_type='layer'))
                                      if backbone is None else backbone,
                                      Classification(
@@ -661,8 +684,18 @@ class MomentumContrastSupervisor(Supervisor):
 
 
 class BYOLSupervisor(Supervisor):
-    def __init__(self, dataset, transformations=['crop', 'gray', 'flip', 'jitter'], n_trans=10000, max_elms=3, p=0.5, embedding_size=64, m=0.999,
+    def __init__(self, dataset, embedding_size=128, m=0.999,
                  backbone=None, predictor=None, loss=nn.CrossEntropyLoss(reduction='mean')):
+        """Bootstrap your own latent https://arxiv.org/pdf/2006.07733.pdf.
+
+        Args:
+            dataset (torch.utils.data.Dataset): The dataset to train on.
+            embedding_size (int, optional): Size of predicted embeddings. Defaults to 128.
+            m (float, optional): Momentum encoder weighting parameter. Defaults to 0.999.
+            backbone (torch.nn.Module, optional): Backbone network. Defaults to None, resulting in an EfficientNet backbone.
+            predictor (torch.nn.Module, optional): Prediction network. Defaults to None, resulting in a MLP that fits to the embeddings size.
+            loss ([type], optional): The critierion to train on. Defaults to nn.CrossEntropyLoss(reduction='mean').
+        """
         super().__init__(CombinedNet(CombinedNet(ReshapeChannels(EfficientFeatures()), Classification(layers=[3136, 1024, 1024, embedding_size]))
                                      if backbone is None else backbone,
                                      Classification(
@@ -724,8 +757,19 @@ class BYOLSupervisor(Supervisor):
 
 
 class InstanceDiscriminationSupervisor(Supervisor):
-    def __init__(self, dataset, transformations=['crop', 'gray', 'flip', 'jitter'], n_trans=10000, max_elms=3, p=0.5, embedding_size=128, m=3136, t=0.03,
+    def __init__(self, dataset, embedding_size=128, n=3136, t=0.03,
                  backbone=None, predictor=None, loss=nn.CrossEntropyLoss(reduction='mean')):
+        """Instance Discrimination https://arxiv.org/pdf/1805.01978.pdf.
+
+        Args:
+            dataset (torch.utils.data.Dataset): The dataset to train on.
+            embedding_size (int, optional): Size of predicted embeddings. Defaults to 128.
+            n (int, optional): Number of negative examples per instance. Defaults to 3136.
+            t (float, optional): Temperature. Defaults to 0.03.
+            backbone (torch.nn.Module, optional): Backbone network. Defaults to None, resulting in an EfficientNet backbone.
+            predictor (torch.nn.Module, optional): Prediction network. Defaults to None, resulting in a MLP that fits to the embeddings size.
+            loss ([type], optional): The critierion to train on. Defaults to nn.CrossEntropyLoss(reduction='mean').
+        """
         super().__init__(CombinedNet(ReshapeChannels(EfficientFeatures())
                                      if backbone is None else backbone,
                                      Classification(
@@ -736,7 +780,7 @@ class InstanceDiscriminationSupervisor(Supervisor):
                          loss,
                          siamese_collate)
         self.embedding_size = embedding_size
-        self.m = m
+        self.n = n
         self.t = t
 
     def _epochs(self, epochs, train_loader, optimizer, lr_scheduler):
@@ -774,7 +818,7 @@ class InstanceDiscriminationSupervisor(Supervisor):
         l_pos = torch.bmm(q.view(q.shape[0], 1, q.shape[1]), k.view(
             k.shape[0], k.shape[1], 1)).squeeze(1) / self.t
         l_neg = torch.bmm(q.view(q.shape[0], 1, q.shape[1]), memory.data(
-            self.m).permute(0, 2, 1)).squeeze(1) / self.t
+            self.n).permute(0, 2, 1)).squeeze(1) / self.t
 
         logits = torch.cat([l_pos, l_neg], dim=1)
 
@@ -788,8 +832,20 @@ class InstanceDiscriminationSupervisor(Supervisor):
 
 
 class ContrastiveMultiviewCodingSupervisor(Supervisor):
-    def __init__(self, dataset, transformations=['crop', 'gray', 'flip', 'jitter'], n_trans=10000, max_elms=3, p=0.5, embedding_size=64, m=128, t=0.07, momentum=0.5,
+    def __init__(self, dataset, embedding_size=128, n=3136, t=0.07, memory_m=0.5,
                  backbone=None, predictor=None, loss=nn.CrossEntropyLoss(reduction='mean')):
+        """Contrastive Multiview Coding https://arxiv.org/pdf/1906.05849.pdf.
+
+        Args:
+            dataset (torch.utils.data.Dataset): The dataset to train on.
+            embedding_size (int, optional): Size of predicted embeddings. Defaults to 128.
+            n (int, optional): Number of negatives. Defaults to 3136.
+            t (float, optional): Temperature. Defaults to 0.07.
+            memory_m (float, optional): Memory update momentum. Defaults to 0.5.
+            backbone (torch.nn.Module, optional): Backbone network. Defaults to None, resulting in an EfficientNet backbone.
+            predictor (torch.nn.Module, optional): Prediction network. Defaults to None, resulting in a MLP that fits to the embeddings size.
+            loss ([type], optional): The critierion to train on. Defaults to nn.CrossEntropyLoss(reduction='mean').
+        """
         super().__init__(CombinedNet(nn.Sequential(nn.Conv2d(1, 3, 1), ReshapeChannels(EfficientFeatures()))
                                      if backbone is None else backbone,
                                      Classification(
@@ -799,15 +855,15 @@ class ContrastiveMultiviewCodingSupervisor(Supervisor):
                              dataset, transformations=ContrastivePredictiveCodingAugmentations),
                          loss)
         self.embedding_size = embedding_size
-        self.m = m
+        self.n = n
         self.t = t
-        self.momentum = momentum
+        self.memory_m = memory_m
 
     def _epochs(self, epochs, train_loader, optimizer, lr_scheduler):
         batch_size = train_loader.batch_size
         # Init queue
         memory = BatchedMemory(size=len(self.dataset), batch_size=batch_size,
-                               embedding_size=self.embedding_size, momentum=self.momentum)
+                               embedding_size=self.embedding_size, momentum=self.memory_m)
         self.model_k = CombinedNet(nn.Sequential(nn.Conv2d(2, 3, 1), ReshapeChannels(EfficientFeatures())),
                                    Classification(layers=[3136, 1024, 1024, self.embedding_size])).to('cuda')
         for epoch_id in range(epochs):
@@ -840,7 +896,7 @@ class ContrastiveMultiviewCodingSupervisor(Supervisor):
         l_pos1 = torch.bmm(q1.view(q1.shape[0], 1, q1.shape[1]), k1.view(
             k1.shape[0], k1.shape[1], 1)).squeeze(1) / self.t
         l_neg1 = torch.bmm(q1.view(q1.shape[0], 1, q1.shape[1]), memory.data(
-            self.m).permute(0, 2, 1)).squeeze(1) / self.t
+            self.n).permute(0, 2, 1)).squeeze(1) / self.t
         logits1 = torch.cat([l_pos1, l_neg1], dim=1)
 
         # The other
@@ -852,7 +908,7 @@ class ContrastiveMultiviewCodingSupervisor(Supervisor):
         l_pos2 = torch.bmm(q2.view(q2.shape[0], 1, q2.shape[1]), k2.view(
             k2.shape[0], k2.shape[1], 1)).squeeze(1) / self.t
         l_neg2 = torch.bmm(q2.view(q1.shape[0], 1, q2.shape[1]), memory.data(
-            self.m).permute(0, 2, 1)).squeeze(1) / self.t
+            self.n).permute(0, 2, 1)).squeeze(1) / self.t
         logits2 = torch.cat([l_pos2, l_neg2], dim=1)
 
         logits = torch.cat((logits1, logits2), dim=0)
@@ -866,8 +922,20 @@ class ContrastiveMultiviewCodingSupervisor(Supervisor):
 
 
 class PIRLSupervisor(Supervisor):
-    def __init__(self, dataset, transformations=['crop', 'gray', 'flip', 'jitter'], n_trans=10000, max_elms=3, p=0.5, embedding_size=128, m=3136, t=0.07, momentum=0.5,
+    def __init__(self, dataset, embedding_size=128, n=3136, t=0.07, memory_m=0.5,
                  backbone=None, predictor=None, loss=nn.CrossEntropyLoss(reduction='mean')):
+        """PIRL https://arxiv.org/abs/1912.01991.
+
+        Args:
+            dataset (torch.utils.data.Dataset): The dataset to train on.
+            embedding_size (int, optional): Size of predicted embeddings. Defaults to 128.
+            n (int, optional): Number of negatives. Defaults to 3136.
+            t (float, optional): Temperature. Defaults to 0.07.
+            memory_m (float, optional): Memory update momentum. Defaults to 0.5.
+            backbone (torch.nn.Module, optional): Backbone network. Defaults to None, resulting in an EfficientNet backbone.
+            predictor (torch.nn.Module, optional): Prediction network. Defaults to None, resulting in a MLP that fits to the embeddings size.
+            loss ([type], optional): The critierion to train on. Defaults to nn.CrossEntropyLoss(reduction='mean').
+        """
         super().__init__(CombinedNet(ReshapeChannels(EfficientFeatures())
                                      if backbone is None else backbone,
                                      Classification(
@@ -877,15 +945,15 @@ class PIRLSupervisor(Supervisor):
                              dataset, transformations=ContrastivePredictiveCodingAugmentations, transformations2=PIRLAugmentations),
                          loss)
         self.embedding_size = embedding_size
-        self.m = m
+        self.n = n
         self.t = t
-        self.momentum = momentum
+        self.memory_m = memory_m
 
     def _epochs(self, epochs, train_loader, optimizer, lr_scheduler):
         batch_size = train_loader.batch_size
         # Init queue
         memory = BatchedMemory(size=len(self.dataset), batch_size=batch_size,
-                               embedding_size=self.embedding_size, momentum=self.momentum)
+                               embedding_size=self.embedding_size, momentum=self.memory_m)
         self.g_head = copy.deepcopy(self.model.predictor).to('cuda')
 
         for epoch_id in range(epochs):
@@ -920,7 +988,7 @@ class PIRLSupervisor(Supervisor):
         l_pos = torch.bmm(f.view(f.shape[0], 1, f.shape[1]), k.view(
             k.shape[0], k.shape[1], 1)).squeeze(1) / self.t
         l_neg = torch.bmm(f.view(f.shape[0], 1, f.shape[1]), memory.data(
-            self.m).permute(0, 2, 1)).squeeze(1) / self.t
+            self.n).permute(0, 2, 1)).squeeze(1) / self.t
 
         logits_f = torch.cat([l_pos, l_neg], dim=1)
 
@@ -928,7 +996,7 @@ class PIRLSupervisor(Supervisor):
         l_pos = torch.bmm(g.view(g.shape[0], 1, g.shape[1]), k.view(
             k.shape[0], k.shape[1], 1)).squeeze(1) / self.t
         l_neg = torch.bmm(g.view(g.shape[0], 1, g.shape[1]), memory.data(
-            self.m).permute(0, 2, 1)).squeeze(1) / self.t
+            self.n).permute(0, 2, 1)).squeeze(1) / self.t
 
         logits_g = torch.cat([l_pos, l_neg], dim=1)
 
