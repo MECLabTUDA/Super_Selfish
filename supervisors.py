@@ -18,7 +18,18 @@ from memory import BatchedQueue, BatchedMemory
 
 
 class Supervisor():
+
     def __init__(self, model, dataset, loss=nn.CrossEntropyLoss(reduction='mean'), collate_fn=None, distributed=False):
+        """Constitutes a self-supervision algorithm. All implemented algorithms are childs. Handles training, storing, and
+        loading of the trained model/backbone.
+
+        Args:
+            model (torch.nn.Module): The module to self supervise.
+            dataset (torch.utils.data.Dataset): The dataset to train on.
+            loss (torch.nn.Module, optional): The critierion to train on. Defaults to nn.CrossEntropyLoss(reduction='mean').
+            collate_fn (function, optional): The collate function. Defaults to None.
+            distributed (bool, optional): Wether to use data parallelism. Defaults to False. Not supported for all models yet.
+        """
         self.model = nn.DataParallel(model) if distributed else model
         self.dataset = dataset
         self.loss = loss
@@ -26,6 +37,19 @@ class Supervisor():
 
     def supervise(self, lr=1e-3, optimizer=torch.optim.Adam, epochs=10, batch_size=32, shuffle=True,
                   num_workers=0, name="store/base", pretrained=False, lr_scheduler=lambda optimizer: torch.optim.lr_scheduler.StepLR(optimizer, step_size=100, gamma=1.0)):
+        """Starts the training procedure of a self-supervision algorithm.
+
+        Args:
+            lr (float, optional): Optimizer learning rate. Defaults to 1e-3.
+            lr_scheduler (torch.optim._LRScheduler, optional): Optional learning rate scheduler. Defaults to lambdaoptimizer:torch.optim.lr_scheduler.StepLR(optimizer, step_size=100, gamma=1.0).
+            optimizer (torch.optim.Optimizer, optional): Optimizer to use. Defaults to torch.optim.Adam.
+            epochs (int, optional): Number of epochs to train. Defaults to 10.
+            batch_size (int, optional): Size of bachtes to process. Defaults to 32.
+            shuffle (bool, optional): Wether to shuffle the dataset. Defaults to True.
+            num_workers (int, optional): Number of workers to use. Defaults to 0.
+            name (str, optional): Path to store and load models. Defaults to "store/base".
+            pretrained (bool, optional): Wether to load pretrained model. Defaults to False.
+        """
         print(bcolors.OKGREEN + "Train with " +
               type(self).__name__ + bcolors.ENDC)
         self._load_pretrained(name, pretrained)
@@ -39,6 +63,15 @@ class Supervisor():
             print()
 
     def _load_pretrained(self, name, pretrained):
+        """Private method to load a pretrained model
+
+        Args:
+            name (str): Path to model.
+            pretrained (bool): Wether to load pretrained model.
+
+        Raises:
+            IOError: [description]
+        """
         try:
             if pretrained:
                 self.load(name)
@@ -46,6 +79,20 @@ class Supervisor():
             raise IOError("Could not load pretrained.")
 
     def _init_data_optimizer(self, optimizer, batch_size, shuffle, num_workers, collate_fn, lr, lr_scheduler):
+        """Creates all objects that are neccessary for the self-supervision training and are dependend on self.supervise(...).
+
+        Args:
+            optimizer (torch.optim.Optimizer, optional): Optimizer to use.
+            batch_size (int, optional): Size of bachtes to process.
+            shuffle (bool, optional): Wether to shuffle the dataset.
+            num_workers (int, optional): Number of workers to use.
+            collate_fn (function, optional): The collate function.
+            lr (float, optional): Optimizer learning rate.
+            lr_scheduler (torch.optim._LRScheduler, optional): Optional learning rate scheduler.
+
+        Returns:
+            Tuple: All created objects
+        """
         train_loader = torch.utils.data.DataLoader(self.dataset, batch_size=batch_size,
                                                    shuffle=shuffle, num_workers=num_workers, collate_fn=collate_fn)
         optimizer = optimizer(self.model.parameters(), lr=lr)
@@ -54,6 +101,14 @@ class Supervisor():
         return train_loader, optimizer, lr_scheduler
 
     def _epochs(self, epochs, train_loader, optimizer, lr_scheduler):
+        """Implements the training loop (epochs, batches, visualization) excluding the actual training step.
+
+        Args:
+            epochs (int, optional): Number of epochs to train.
+            train_loader (torch.utils.data.DataLoader): Iterator over the dataset.
+            lr_scheduler (torch.optim._LRScheduler, optional): Optional learning rate scheduler.
+            optimizer (torch.optim.Optimizer, optional): Optimizer to use.
+        """
         for epoch_id in range(epochs):
             loss_sum = 0
             tkb = tqdm(total=int(len(train_loader)), bar_format="{l_bar}%s{bar}%s{r_bar}" % (
@@ -71,28 +126,67 @@ class Supervisor():
                              lr_scheduler=lr_scheduler)
 
     def _forward(self, data):
+        """Forward part of training step. Conducts all forward calculations.
+
+        Args:
+            data (Tuple(torch.FloatTensor,torch.FloatTensor)): Batch of instances with corresponding labels.
+
+        Returns:
+            torch.FloatTensor: Loss of batch.
+        """
         inputs, labels = data
         outputs = self.model(inputs.to('cuda'))
         loss = self.loss(outputs, labels.to('cuda'))
         return loss
 
     def _update(self, loss, optimizer, lr_scheduler):
+        """Backward part of training step. Calculates gradients and conducts optimization step. 
+        Also handles other updates like lr scheduler.
+
+        Args:
+            loss (torch.nn.Module, optional): The critierion to train on.
+            lr_scheduler (torch.optim._LRScheduler, optional): Optional learning rate scheduler.
+            optimizer (torch.optim.Optimizer, optional): Optimizer to use.
+        """
         loss.backward()
         optimizer.step()
         lr_scheduler.step()
 
     def to(self, name):
+        """Wraps device handling.
+
+        Args:
+            name (str): Name of device, see pytorch.
+
+        Returns:
+            Supervisor: Returns itself.
+        """
         self.model = self.model.to(name)
         return self
 
     def get_backbone(self):
+        """Extracts the backbone network that creates features
+
+        Returns:
+            torch.nn.Module: The backbone network.
+        """
         return self.model.backbone
 
     def save(self, name="store/base"):
+        """Saves model parameters to disk.
+
+        Args:
+            name (str, optional): Path to storage. Defaults to "store/base".
+        """
         torch.save(self.model.state_dict(), name + ".pt")
         print(bcolors.OKBLUE + "Saved at " + name + "." + bcolors.ENDC)
 
     def load(self, name="store/base"):
+        """Loads model parameters from disk.
+
+        Args:
+            name (str, optional): Path to storage. Defaults to "store/base".
+        """
         pretrained_dict = torch.load(name + ".pt")
         print(bcolors.OKBLUE + "Loaded", name + "." + bcolors.ENDC)
         model_dict = self.model.state_dict()
@@ -193,11 +287,27 @@ class GanSupervisor():
 
 class LabelSupervisor(Supervisor):
     def __init__(self, model, dataset, loss=nn.CrossEntropyLoss(reduction='mean')):
+        """Only for cleanness. Same as Supervisor.
+
+        Args:
+            model (torch.nn.Module): The module to self supervise.
+            dataset (torch.utils.data.Dataset): The dataset to train on.
+            loss (torch.nn.Module, optional): The critierion to train on. Defaults to nn.CrossEntropyLoss(reduction='mean').
+        """
         super().__init__(model, dataset, loss)
 
 
 class RotateNetSupervisor(Supervisor):
     def __init__(self, dataset, rotations=[0.0, 90.0, 180.0,  -90.0], backbone=None, predictor=None, loss=nn.CrossEntropyLoss(reduction='mean')):
+        """RotateNet like supervisor https://arxiv.org/abs/1803.07728.
+
+        Args:
+            dataset (torch.utils.data.Dataset): The dataset to train on.
+            rotations (list, optional): Rotations to predict. Defaults to [0.0, 90.0, 180.0,  -90.0].
+            backbone (torch.nn.Module, optional): Backbone network. Defaults to None, resulting in an EfficientNet backbone.
+            predictor (torch.nn.Module, optional): Prediction network. Defaults to None, resulting in a MLP that fits to the number of rotations to predict.
+            loss (torch.nn.Module, optional): The critierion to train on. Defaults to nn.CrossEntropyLoss(reduction='mean').
+        """
         super().__init__(CombinedNet(ReshapeChannels(EfficientFeatures())
                                      if backbone is None else backbone,
                                      Classification(
@@ -210,6 +320,19 @@ class RotateNetSupervisor(Supervisor):
 class ExemplarNetSupervisor(Supervisor):
     def __init__(self, dataset, transformations=['rotation', 'crop', 'gray', 'flip', 'erase'], n_classes=8000, n_trans=100, max_elms=10, p=0.5,
                  backbone=None, predictor=None, loss=nn.CrossEntropyLoss(reduction='mean')):
+        """ExemplarNet like supervisor https://arxiv.org/abs/1406.6909.
+
+        Args:
+            dataset (torch.utils.data.Dataset): The dataset to train on.
+            transformations (list, optional): Type of elementar transformations to use. Defaults to ['rotation', 'crop', 'gray', 'flip', 'erase'].
+            n_classes (int, optional): Number of classes, i.e. the subset size of the dataset. Defaults to 8000.
+            n_trans (int, optional): Number of combined transformations. Defaults to 100.
+            max_elms (int, optional): Number of elementar transformations per combined transformation. Defaults to 10.
+            p (float, optional): Prob. of an elmentar transformation to be part of a combined transformation. Defaults to 0.5.
+            backbone (torch.nn.Module, optional): Backbone network. Defaults to None, resulting in an EfficientNet backbone.
+            predictor (torch.nn.Module, optional): Prediction network. Defaults to None, resulting in a MLP that fits to the number of classes to predict.
+            loss (torch.nn.Module, optional): The critierion to train on. Defaults to nn.CrossEntropyLoss(reduction='mean').
+        """
         super().__init__(CombinedNet(ReshapeChannels(EfficientFeatures())
                                      if backbone is None else backbone,
                                      Classification(
@@ -224,6 +347,17 @@ class JigsawNetSupervisor(Supervisor):
     # Not the CFN of the paper for easier implementation with common backbones and, most importantly, easier reuse
     def __init__(self, dataset, jigsaw_path="utils/permutations_hamming_max_1000.npy", n_perms_per_image=69, crop_size=64,
                  backbone=None, predictor=None, loss=nn.CrossEntropyLoss(reduction='mean')):
+        """Jigsaw puzzle like supervisor https://arxiv.org/abs/1603.09246.
+
+        Args:
+            dataset (torch.utils.data.Dataset): The dataset to train on.
+            jigsaw_path (str, optional): The path to the used permutations. Defaults to "utils/permutations_hamming_max_1000.npy".
+            n_perms_per_image (int, optional): Number of permutations per image. Defaults to 69.
+            crop_size (int, optional): Crop size, implicitly determines the distance between crops. Defaults to 64.
+            backbone (torch.nn.Module, optional): Backbone network. Defaults to None, resulting in an EfficientNet backbone.
+            predictor (torch.nn.Module, optional): Prediction network. Defaults to None, resulting in a MLP that fits to the number of permutations used.
+            loss (torch.nn.Module, optional): The critierion to train on. Defaults to nn.CrossEntropyLoss(reduction='mean').
+        """
         super().__init__(CombinedNet(ReshapeChannels(EfficientFeatures())
                                      if backbone is None else backbone,
                                      Classification(
@@ -235,9 +369,17 @@ class JigsawNetSupervisor(Supervisor):
 
 
 class DenoiseNetSupervisor(Supervisor):
-    # Not the CFN of the paper for easier implementation with common backbones and, most importantly, easier reuse
     def __init__(self, dataset, p=0.7,
                  backbone=None, predictor=None, loss=nn.MSELoss(reduction='mean')):
+        """Denoising autoencoder https://www.cs.toronto.edu/~larocheh/publications/icml-2008-denoising-autoencoders.pdf.
+
+        Args:
+            dataset (torch.utils.data.Dataset): The dataset to train on.
+            p (float, optional): Noise level. Defaults to 0.7.
+            backbone (torch.nn.Module, optional): Backbone network. Defaults to None, resulting in an EfficientNet backbone.
+            predictor (torch.nn.Module, optional): Prediction network. Defaults to None, resulting in a standard upsampling ConvNet.
+            loss ([type], optional): The critierion to train on. Defaults to nn.MSELoss(reduction='mean').
+        """
         super().__init__(CombinedNet(EfficientFeatures()
                                      if backbone is None else backbone,
                                      Upsampling(
@@ -248,9 +390,21 @@ class DenoiseNetSupervisor(Supervisor):
 
 
 class SplitBrainNetSupervisor(Supervisor):
-    # Not the CFN of the paper for easier implementation with common backbones and, most importantly, easier reuse
     def __init__(self, dataset, l_step=2, l_offset=0, ab_step=26, a_offset=128, b_offset=128,
                  backbone=None, predictor=None, loss=GroupedCrossEntropyLoss()):
+        """Splitbrain autoencoder https://arxiv.org/pdf/1611.09842.pdf.
+
+        Args:
+            dataset (torch.utils.data.Dataset): The dataset to train on.
+            l_step (int, optional): l channel bin size. Defaults to 2.
+            l_offset (int, optional): l channel offset. Defaults to 0.
+            ab_step (int, optional): ab channel bin size Defaults to 26.
+            a_offset (int, optional): a channel offset. Defaults to 128.
+            b_offset (int, optional): b channel offset. Defaults to 128.
+            backbone (torch.nn.Module, optional): Backbone network. Defaults to None, resulting in an EfficientNet backbone.
+            predictor (torch.nn.Module, optional): Prediction network. Defaults to None, resulting in a standard upsampling ConvNet.
+            loss ([type], optional): The critierion to train on. Defaults to GroupedCrossEntropyLoss().
+        """
         super().__init__(CombinedNet(GroupedEfficientFeatures()
                                      if backbone is None else backbone,
                                      GroupedUpsampling(
@@ -262,9 +416,21 @@ class SplitBrainNetSupervisor(Supervisor):
 
 
 class ContextNetSupervisor(GanSupervisor):
-    # Not the CFN of the paper for easier implementation with common backbones and, most importantly, easier reuse
     def __init__(self, dataset,  p=0.3, n_blocks=10, scale_range=(0.05, 0.1),
                  backbone=None, predictor=None, discriminator=None, loss=nn.MSELoss(reduction='mean'), fake_loss=nn.MSELoss(reduction='mean')):
+        """Context autoencoder https://arxiv.org/pdf/1604.07379.pdf .
+
+        Args:
+            dataset (torch.utils.data.Dataset): The dataset to train on.
+            p (float, optional): Prob. with which a block is erased. Defaults to 0.3.
+            n_blocks (int, optional): Number of blocks that may be erased in a given image. Defaults to 10.
+            scale_range (tuple, optional): Block scale range from which a scale is sampled per block. Defaults to (0.05, 0.1).
+            backbone (torch.nn.Module, optional): Backbone network. Defaults to None, resulting in an EfficientNet backbone.
+            predictor (torch.nn.Module, optional): Prediction network. Defaults to None, resulting in a standard upsampling ConvNet.
+            discriminator (torch.nn.Module, optional): Discriminator network. Defaults to None, resulting in an EfficientNet.
+            loss ([type], optional): The critierion to train on.. Defaults to nn.MSELoss(reduction='mean').
+            fake_loss ([type], optional): The advesarial criterion. Defaults to nn.MSELoss(reduction='mean').
+        """
         super().__init__(CombinedNet(ChannelwiseFC(EfficientFeatures())
                                      if backbone is None else backbone,
                                      Upsampling(
@@ -279,9 +445,20 @@ class ContextNetSupervisor(GanSupervisor):
 
 
 class BiGanSupervisor(GanSupervisor):
-    # Not the CFN of the paper for easier implementation with common backbones and, most importantly, easier reuse
     def __init__(self, dataset, shape=(32, 8, 8), rand_gen=np.random.rand,
                  backbone=None, predictor=None, discriminator=None, loss=nn.MSELoss(reduction='mean'), fake_loss=nn.MSELoss(reduction='mean')):
+        """BiGan Supervisor https://arxiv.org/pdf/1605.09782.pdf.
+
+        Args:
+            dataset (torch.utils.data.Dataset): The dataset to train on.
+            shape (tuple, optional): Latent vector shape. Defaults to (32, 8, 8).
+            rand_gen (np.random, optional): Random noise distribution. Defaults to np.random.rand.
+            backbone (torch.nn.Module, optional): Backbone network. Defaults to None, resulting in an EfficientNet backbone.
+            predictor (torch.nn.Module, optional): Prediction network. Defaults to None, resulting in a standard upsampling ConvNet.
+            discriminator (torch.nn.Module, optional): Discriminator network. Defaults to None, resulting in an EfficientNet.
+            loss ([type], optional): The critierion to train on.. Defaults to nn.MSELoss(reduction='mean').
+            fake_loss ([type], optional): The advesarial criterion. Defaults to nn.MSELoss(reduction='mean').
+        """
         super().__init__(CombinedNet(ReshapeChannels(EfficientFeatures(), out_channels=32)
                                      if backbone is None else backbone,
                                      Upsampling(
@@ -365,7 +542,6 @@ class BiGanSupervisor(GanSupervisor):
 
 
 class ContrastivePredictiveCodingSupervisor(Supervisor):
-    # Not the CFN of the paper for easier implementation with common backbones and, most importantly, easier reuse
     def __init__(self, dataset, half_crop_size=(int(28), int(28)), sides=['top', 'bottom', 'left', 'right'],
                  backbone=None, predictor=None, loss=CPCLoss(k=3, ignore=2).to('cuda')):
         super().__init__(CombinedNet(Batch2Image(EfficientFeatures(norm_type='layer'))
