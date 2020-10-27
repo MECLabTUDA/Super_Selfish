@@ -12,7 +12,7 @@ from colorama import Fore
 from utils import bcolors
 import numpy as np
 import copy
-from data import siamese_collate
+from data import batched_collate
 from data import ContrastivePredictiveCodingAugmentations, MomentumContrastAugmentations, BYOLAugmentations, PIRLAugmentations
 from memory import BatchedQueue, BatchedMemory
 
@@ -314,7 +314,8 @@ class RotateNetSupervisor(Supervisor):
                                          layers=[3136, 1024, 256, len(rotations)])
                                      if predictor is None else predictor),
                          RotateDataset(dataset, rotations=rotations),
-                         loss)
+                         loss,
+                         collate_fn=batched_collate)
 
 
 class ExemplarNetSupervisor(Supervisor):
@@ -564,7 +565,7 @@ class ContrastivePredictiveCodingSupervisor(Supervisor):
                          ContrastivePreditiveCodingDataset(
                              dataset, half_crop_size=half_crop_size),
                          loss,
-                         siamese_collate)
+                         batched_collate)
         self.sides = sides
 
     def _forward(self, data):
@@ -778,7 +779,7 @@ class InstanceDiscriminationSupervisor(Supervisor):
                          AugmentationIndexedDataset(
                              dataset, transformations=ContrastivePredictiveCodingAugmentations),
                          loss,
-                         siamese_collate)
+                         batched_collate)
         self.embedding_size = embedding_size
         self.n = n
         self.t = t

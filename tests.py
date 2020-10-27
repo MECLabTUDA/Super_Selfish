@@ -17,7 +17,7 @@ from torch.utils.data import random_split
 # Configuration
 # +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 # Choose supervisor
-supervisor_name = 'exemplar'
+supervisor_name = 'rotate'
 lr = 1e-4
 epochs = 50
 batch_size = 32

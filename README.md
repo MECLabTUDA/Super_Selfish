@@ -1,8 +1,8 @@
 # Super Selfish
-A framework for self supervised learning on images.
+A unified Pytorch framework for image-based self-supervised learning.
 
 ## Algorithms
-Currently supports 13 algorithms:
+Currently support of 13 algorithms:
 ### Patch-based
 - ExemplarNet https://arxiv.org/abs/1406.6909
   We use the stronger set of augmentations used in CPC and do not use gradient-based patch sampling as this does not seem to be neccessary.
@@ -28,7 +28,8 @@ Currently supports 13 algorithms:
   Jigsaw processed at once for performance and simplicity
 
 ## Remarks
-If not precisley stated in a paper, we use the CPC image augmentations. Some augmentations or implementation details may be different to the original papers as we aim for a comparable unified framework.
+- If not precisley stated in a paper, we use the CPC image augmentations. Some augmentations or implementation details may be different to the original papers as we aim for a comparable unified framework.
+- We use an EfficientNet https://github.com/lukemelas/EfficientNet-PyTorch implementation as the defaul backbone/feature extractor. We use a customized version that can be switched from batch norm to layer norm.
 
 ## Usage
 Training is as easy as:
