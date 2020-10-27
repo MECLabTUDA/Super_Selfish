@@ -6,7 +6,7 @@ from data import visualize, RotateDataset, ExemplarDataset, JigsawDataset, Denoi
     AugmentationIndexedDataset, AugmentationLabIndexedDataset
 from models import ReshapeChannels, Classification, Batch2Image, GroupedLoss, \
     CPCLoss, MaskedCNN, EfficientFeatures, CombinedNet, Upsampling, ChannelwiseFC, GroupedEfficientFeatures, \
-    GroupedUpsampling
+    GroupedUpsampling, SequentialUpTo
 from tqdm import tqdm
 from colorama import Fore
 from utils import bcolors
@@ -19,7 +19,7 @@ from memory import BatchedQueue, BatchedMemory
 
 class Supervisor():
 
-    def __init__(self, model, dataset, loss=nn.CrossEntropyLoss(reduction='mean'), collate_fn=None, distributed=False):
+    def __init__(self, model, dataset, loss=nn.CrossEntropyLoss(reduction='mean'), collate_fn=None):
         """Constitutes a self-supervision algorithm. All implemented algorithms are childs. Handles training, storing, and
         loading of the trained model/backbone.
 
@@ -28,9 +28,10 @@ class Supervisor():
             dataset (torch.utils.data.Dataset): The dataset to train on.
             loss (torch.nn.Module, optional): The critierion to train on. Defaults to nn.CrossEntropyLoss(reduction='mean').
             collate_fn (function, optional): The collate function. Defaults to None.
-            distributed (bool, optional): Wether to use data parallelism. Defaults to False. Not supported for all models yet.
         """
-        self.model = nn.DataParallel(model) if distributed else model
+        if not isinstance(model, CombinedNet):
+            raise("You must pass a CombinedNet to model.")
+        self.model = model
         self.dataset = dataset
         self.loss = loss
         self.collate_fn = collate_fn
@@ -140,7 +141,7 @@ class Supervisor():
         return loss
 
     def _update(self, loss, optimizer, lr_scheduler):
-        """Backward part of training step. Calculates gradients and conducts optimization step. 
+        """Backward part of training step. Calculates gradients and conducts optimization step.
         Also handles other updates like lr scheduler.
 
         Args:
@@ -171,6 +172,14 @@ class Supervisor():
             torch.nn.Module: The backbone network.
         """
         return self.model.backbone
+
+    def get_predictor(self):
+        """Extracts the predictor network
+
+        Returns:
+            torch.nn.Module: The backbone network.
+        """
+        return self.model.predictor
 
     def save(self, name="store/base"):
         """Saves model parameters to disk.
@@ -271,6 +280,9 @@ class GanSupervisor():
         return self
 
     def get_backbone(self):
+        return self.model.backbone
+
+    def get_predictor(self):
         return self.model.backbone
 
     def save(self, name="store/base"):
@@ -570,14 +582,14 @@ class ContrastivePredictiveCodingSupervisor(Supervisor):
 
     def _forward(self, data):
         inputs, _ = data
-        encodings = self.model.backbone(inputs.to('cuda'))
+        encodings = self.get_backbone()(inputs.to('cuda'))
         # encodings = F.layer_norm(encodings.permute(
         #    0, 2, 3, 1), encodings.shape[1:2]).permute(0, 3, 1, 2)
         # predictions = F.layer_norm(predictions.permute(
         #    0, 2, 3, 1), predictions.shape[1:2]).permute(0, 3, 1, 2)
         loss = 0
         for side in self.sides:
-            predictions = self.model.predictor[side](encodings)
+            predictions = self.get_predictor()[side](encodings)
             if side == 'top':
                 encodings_a = encodings
             elif side == 'bottom':
@@ -697,10 +709,10 @@ class BYOLSupervisor(Supervisor):
             predictor (torch.nn.Module, optional): Prediction network. Defaults to None, resulting in a MLP that fits to the embeddings size.
             loss ([type], optional): The critierion to train on. Defaults to nn.CrossEntropyLoss(reduction='mean').
         """
-        super().__init__(CombinedNet(CombinedNet(ReshapeChannels(EfficientFeatures()), Classification(layers=[3136, 1024, 1024, embedding_size]))
+        super().__init__(CombinedNet(ReshapeChannels(EfficientFeatures())
                                      if backbone is None else backbone,
-                                     Classification(
-                                         layers=[embedding_size, embedding_size * 4, embedding_size * 2, embedding_size])
+                                     SequentialUpTo(Classification(layers=[3136, 1024, 1024, embedding_size]), Classification(
+                                         layers=[embedding_size, embedding_size * 4, embedding_size * 2, embedding_size]))
                                      if predictor is None else predictor),
                          AugmentationDataset(
                              dataset, transformations=BYOLAugmentations),
@@ -737,7 +749,8 @@ class BYOLSupervisor(Supervisor):
 
         q = self.model(imgs1.to('cuda'))
         with torch.no_grad():
-            k = self.model_k.backbone(imgs2.to('cuda'))
+            k = self.model_k.predictor(
+                self.model_k.backbone(imgs2.to('cuda')), up_to=0)
             k = F.normalize(k)
         q = F.normalize(q)
 
@@ -746,7 +759,8 @@ class BYOLSupervisor(Supervisor):
 
         q = self.model(imgs2.to('cuda'))
         with torch.no_grad():
-            k = self.model_k.backbone(imgs1.to('cuda'))
+            k = self.model_k.predictor(
+                self.model_k.backbone(imgs1.to('cuda')), up_to=0)
             k = F.normalize(k)
         q = F.normalize(q)
 

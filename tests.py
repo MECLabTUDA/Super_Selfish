@@ -17,7 +17,7 @@ from torch.utils.data import random_split
 # Configuration
 # +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 # Choose supervisor
-supervisor_name = 'jigsaw'
+supervisor_name = 'byol'
 lr = 1e-4
 epochs = 50
 batch_size = 32
@@ -47,7 +47,7 @@ elif supervisor_name == 'exemplar':
     supervisor = ExemplarNetSupervisor(train_dataset).to(device)
 elif supervisor_name == 'jigsaw':
     supervisor = JigsawNetSupervisor(train_dataset).to(device)
-elif supervisor_name == 'upsampling':
+elif supervisor_name == 'denoise':
     supervisor = DenoiseNetSupervisor(train_dataset).to(device)
 elif supervisor_name == 'context':
     supervisor = ContextNetSupervisor(train_dataset).to(device)
