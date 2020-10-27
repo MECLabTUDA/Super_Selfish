@@ -259,26 +259,40 @@ class ContextDataset(Dataset):
 
 
 class RotateDataset(Dataset):
-    def __init__(self, dataset, rotations=[0.0, 90.0, 180.0,  -90.0]):
+    def __init__(self, dataset, rotations=[0.0, 90.0, 180.0,  -90.0], r_all=True):
         """RotateNet dataset.
 
         Args:
             dataset (torch.utils.data.Dataset)): The backbone dataset.
             rotations (list, optional): Rotations to predict. Defaults to [0.0, 90.0, 180.0,  -90.0].
+            r_all (bool, optional): Wether to return all rotations at once. Defaults to True.
+
         """
+
         self.dataset = dataset
         self.rotations = rotations
+        self.r_all = r_all
 
     def __len__(self):
         return len(self.dataset)
 
     def __getitem__(self, idx):
-        rot_id = int(np.random.randint(len(self.rotations), size=1))
-        img = transforms.functional.to_pil_image(self.dataset[idx][0])
-        img = transforms.functional.rotate(img, self.rotations[rot_id])
-        img = transforms.functional.to_tensor(img)
+        if not self.r_all:
+            rot_id = int(np.random.randint(len(self.rotations), size=1))
+            img = transforms.functional.to_pil_image(self.dataset[idx][0])
+            img = transforms.functional.rotate(img, self.rotations[rot_id])
+            img = transforms.functional.to_tensor(img)
 
-        return img, rot_id
+            return img, rot_id
+        else:
+            imgs = []
+            img_c = transforms.functional.to_pil_image(self.dataset[idx][0])
+            for rot_id, _ in enumerate(self.rotations):
+                img = transforms.functional.rotate(
+                    img_c, self.rotations[rot_id])
+                img = transforms.functional.to_tensor(img)
+                imgs.append(img)
+            return torch.stack(imgs), torch.arange(len(self.rotations))
 
 
 class ExemplarDataset(Dataset):
@@ -395,7 +409,7 @@ def visualize(dataset, idx=0, folder_path='visualization/', batched=False):
                  "-" + str(idx) + ".png")
 
 
-def siamese_collate(data):
+def batched_collate(data):
     transposed_data = list(zip(*data))
     img = torch.cat(transposed_data[0], 0)
     labels = torch.cat(transposed_data[1], 0)
