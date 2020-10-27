@@ -17,7 +17,7 @@ from torch.utils.data import random_split
 # Configuration
 # +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 # Choose supervisor
-supervisor_name = 'pirl'
+supervisor_name = 'exemplar'
 lr = 1e-4
 epochs = 50
 batch_size = 32

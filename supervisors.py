@@ -339,7 +339,7 @@ class ExemplarNetSupervisor(Supervisor):
                                          layers=[3136, 1024, 1024, n_classes])
                                      if predictor is None else predictor),
                          ExemplarDataset(
-                             dataset, transformations=transformations, n_classes=n_classes, n_trans=n_trans, max_elms=max_elms, p=p),
+                             dataset, n_classes=n_classes, n_trans=n_trans, max_elms=max_elms, p=p),
                          loss)
 
 

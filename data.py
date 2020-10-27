@@ -282,7 +282,7 @@ class RotateDataset(Dataset):
 
 
 class ExemplarDataset(Dataset):
-    def __init__(self, dataset, transformations, n_classes=8000, n_trans=100, max_elms=10, p=0.5):
+    def __init__(self, dataset, transformations=None, n_classes=8000, n_trans=100, max_elms=10, p=0.5):
         """ExemplarNet dataset.
 
         Args:
@@ -293,31 +293,39 @@ class ExemplarDataset(Dataset):
             max_elms (int, optional): Number of elementar transformations per combined transformation. Defaults to 10.
             p (float, optional): Prob. of an elmentar transformation to be part of a combined transformation. Defaults to 0.5.
         """
-        # More memory efficient online implementation, even harder task
-        # Processes full images, we are living in the twenties...
-        # Thereby automatically capture various scales
+        pool = [transforms.RandomRotation(  # Rotation
+            30, resample=False, expand=False, center=None, fill=None),
+            transforms.RandomAffine(  # Shearing
+            0, translate=None, scale=None, shear=30, resample=False, fillcolor=0),
+            transforms.RandomAffine(  # Translate
+            0, translate=(0.3, 0.3), scale=None, shear=None, resample=False, fillcolor=0),
+            transforms.Lambda(lambda x: imo.autocontrast(x)),  # Autocontrast
+            transforms.Lambda(lambda x: imo.invert(x)),  # Invert
+            transforms.Lambda(lambda x: imo.equalize(x)),  # Equalize
+            transforms.Lambda(lambda x: imo.solarize(x)),  # Solarize
+            transforms.Lambda(lambda x: imo.posterize(
+                x, bits=int(np.random.randint(4, 8) + 1))),  # Posterize
+            transforms.Lambda(lambda x: ime.Color(
+                x).enhance(np.random.uniform())),  # Color
+            transforms.Lambda(lambda x: ime.Brightness(
+                x).enhance(np.random.uniform())),  # Brightness
+            transforms.Lambda(lambda x: ime.Contrast(
+                x).enhance(np.random.uniform())),  # Contrast
+            transforms.Lambda(lambda x: ime.Sharpness(
+                x).enhance(np.random.uniform())),  # Sharpness
+            transforms.Compose(  # Set black
+            [transforms.ToTensor(), transforms.RandomErasing(1.0), transforms.ToPILImage()]),
+            transforms.Lambda(lambda x: transforms.functional.to_grayscale(  # Grayscale
+                x, num_output_channels=3)),
+            transforms.Lambda(lambda x: elastic_transform(x, sigma=10))
+        ]
+
+        # Processes full images and apply random cropping instead of gradient based sampling.
         indices = torch.randint(len(dataset), (n_classes,)).long()
         self.dataset = Subset(dataset, indices)
         self.p = p
         self.n_trans = n_trans
-        elm_transformations = []
-        for t in transformations:
-            if t == 'rotation':
-                elm_transformations.append(transforms.RandomRotation(
-                    20, resample=False, expand=False, center=None, fill=None))
-            elif t == 'crop':
-                elm_transformations.append(transforms.RandomResizedCrop(
-                    dataset[0][0].shape[1:], scale=(0.5, 1.0), ratio=(0.75, 1.3333333333333333), interpolation=2))
-            elif t == 'gray':
-                elm_transformations.append(transforms.RandomGrayscale(p=1.0))
-            elif t == 'flip':
-                elm_transformations.append(
-                    transforms.RandomHorizontalFlip(1.0))
-            elif t == 'erase':
-                elm_transformations.append(transforms.Compose(
-                    [transforms.ToTensor(), transforms.RandomErasing(1.0), transforms.ToPILImage()]))
-            else:
-                elm_transformations.append(t)
+        elm_transformations = transformations if transformations is not None else pool
 
         self.transformations = []
         for _ in range(self.n_trans):
@@ -514,13 +522,13 @@ def ContrastivePredictiveCodingAugmentations(img):
         transforms.Lambda(lambda x: imo.posterize(
             x, bits=int(np.random.randint(4, 8) + 1))),  # Posterize
         transforms.Lambda(lambda x: ime.Color(
-            img).enhance(np.random.uniform())),  # Color
+            x).enhance(np.random.uniform())),  # Color
         transforms.Lambda(lambda x: ime.Brightness(
-            img).enhance(np.random.uniform())),  # Brightness
+            x).enhance(np.random.uniform())),  # Brightness
         transforms.Lambda(lambda x: ime.Contrast(
-            img).enhance(np.random.uniform())),  # Contrast
+            x).enhance(np.random.uniform())),  # Contrast
         transforms.Lambda(lambda x: ime.Sharpness(
-            img).enhance(np.random.uniform())),  # Sharpness
+            x).enhance(np.random.uniform())),  # Sharpness
         transforms.Compose(  # Set black
         [transforms.ToTensor(), transforms.RandomErasing(1.0), transforms.ToPILImage()])
     ]

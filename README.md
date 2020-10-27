@@ -1,9 +1,12 @@
 # Super Selfish
 A framework for self supervised learning on images.
 
+## Algorithms
 Currently supports 13 algorithms:
 ### Patch-based
 - ExemplarNet https://arxiv.org/abs/1406.6909
+  We use the stronger set of augmentations used in CPC and do not use gradient-based patch sampling as this does not seem to be neccessary.
+  We always process full images but apply scaling and translation.
 - RotateNet https://arxiv.org/abs/1803.07728 
   (No Context Free Network for performance reasons)
 - Jigsaw Puzzle https://arxiv.org/abs/1603.09246
@@ -24,6 +27,10 @@ Currently supports 13 algorithms:
 - PIRL https://arxiv.org/abs/1912.01991 (Memory Bank, Augmentation + Jigsaw Task, Target and Projection Head, 1 Backbone, Temperature)
   Jigsaw processed at once for performance and simplicity
 
+## Remarks
+If not precisley stated in a paper, we use the CPC image augmentations. Some augmentations or implementation details may be different to the original papers as we aim for a comparable unified framework.
+
+## Usage
 Training is as easy as:
 ```python
 
@@ -45,7 +52,6 @@ supervisor.supervise(lr=lr, epochs=epochs,
 
 ```
 
-If not precisley stated in the paper, we use the CPC image augmentations.
 
 
 # TODOs
