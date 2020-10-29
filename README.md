@@ -2,7 +2,7 @@
 A unified Pytorch framework for image-based self-supervised learning.
 
 ## Algorithms
-Currently support of 13 algorithms:
+Currently support of 13 algorithms that can be run in parallel on one node of GPUs:
 ### Patch-based
 - ExemplarNet https://arxiv.org/abs/1406.6909  
   We use the stronger set of augmentations used in CPC and do not use gradient-based patch sampling as this does not seem to be neccessary.
@@ -35,26 +35,63 @@ Currently support of 13 algorithms:
   Jigsaw processed at once for performance and simplicity.
 
 ## Usage
+### Training
 Training is as easy as:
 ```python
 
-supervisor = RotateNetSupervisor(train_dataset).to(device)
-#supervisor = RotateNetSupervisor(train_dataset).to(device)
-#supervisor = ExemplarNetSupervisor(train_dataset).to(device)
-#supervisor = JigsawNetSupervisor(train_dataset).to(device)
-#supervisor = DenoiseNetSupervisor(train_dataset).to(device)
-#supervisor = ContextNetSupervisor(train_dataset).to(device)
-#supervisor = BiGanSupervisor(train_dataset).to(device)
-#supervisor = SplitBrainNetSupervisor(train_dataset).to(device)
-#supervisor = ContrastivePredictiveCodingSupervisor(train_dataset).to(device)
-#supervisor = MomentumContrastSupervisor(train_dataset).to(device)
-#supervisor = BYOLSupervisor(train_dataset).to(device)
-# ...
+# Choose supervisor
+supervisor = RotateNetSupervisor(train_dataset) # .to('cuda')
+
+# supervisor = RotateNetSupervisor(train_dataset)
+# supervisor = ExemplarNetSupervisor(train_dataset)
+# supervisor = JigsawNetSupervisor(train_dataset)
+# supervisor = DenoiseNetSupervisor(train_dataset)
+# supervisor = ContextNetSupervisor(train_dataset)
+# supervisor = BiGanSupervisor(train_dataset)
+# supervisor = SplitBrainNetSupervisor(train_dataset)
+# supervisor = ContrastivePredictiveCodingSupervisor(train_dataset)
+# supervisor = MomentumContrastSupervisor(train_dataset)
+# supervisor = BYOLSupervisor(train_dataset)
+# supervisor = InstanceDiscriminationSupervisor(train_dataset)
+# supervisor = ContrastiveMultiviewCodingSupervisor(train_dataset)
+# supervisor = PIRLSupervisor(train_dataset)
+
 # Start training
-supervisor.supervise(lr=lr, epochs=epochs,
-                     batch_size=batch_size, name="store/base_" + supervisor_name, pretrained=False)
+supervisor.supervise(lr=1e-3, epochs=50,
+                     batch_size=64, name="store/base", pretrained=False)
 
 ```
+### Feature Extraction and Transfer
+The model is automatically stored if the training ends after the given number of epochs or the user manualy interrupts the training process.  
+If not directly reused in the same run, any model can be loaded with:
+
+```python
+supervisor = RotateNetSupervisor().load(name="store/base")
+```
+The feature extractor is retrieved using:
+```python
+# Returns the backbone network i.e. nn.Module
+backbone_network = supervisor.get_backbone()
+```
+If you want to easily add new prediction head you can create a CombinedNet:
+```python
+CombinedNet(backbone_network, nn.Module(...)) 
+```
+
+### Flexibility
+Although training is as easy as writing two lines of code, Super Selfish provides maximum flexibility. Any supervisor can be directly initialized with the corresponding hyperparameters. By default, the hyperparameters from the respective paper are used. Similiarily, the backbone architecture as well as prediction heads are by default those of the papers but can be customized as follows:
+```python
+supervisor = RotateNetSupervisor(train_dataset, backbone=nn.Module(...), predictor=nn.Module(...)) # .to('cuda')
+```
+For individual parameters see Algorithms.  
+
+The training can be governed by the learning rate, the used optimizer, the batch size, wether to shuffle training data, and a learning rate schedule. Polyak averaging is soon to be added.
+```python
+def supervise(self, lr=1e-3, optimizer=torch.optim.Adam, epochs=10, batch_size=32, shuffle=True,
+                  num_workers=0, name="store/base", pretrained=False, lr_scheduler=lambda optimizer: torch.optim.lr_scheduler.StepLR(optimizer, step_size=100, gamma=1.0))
+```
+
+The full documentation is available at: TODO
 
 ## Remarks
 - If not precisley stated in a paper, we use the CPC image augmentations. Some augmentations or implementation details may be different to the original papers as we aim for a comparable unified framework.
@@ -62,6 +99,6 @@ supervisor.supervise(lr=lr, epochs=epochs,
 - Please feel free to open an issue regarding bugs and/or other algorithms that should be added.
 
 ## TODOs
-- Full DDistributed support, ShuffledBN
+- Multi node support, ShuffledBN
 - Refactor old datasets
 - Polyak Averaging

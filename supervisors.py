@@ -19,7 +19,7 @@ from memory import BatchedQueue, BatchedMemory
 
 class Supervisor():
 
-    def __init__(self, model, dataset, loss=nn.CrossEntropyLoss(reduction='mean'), collate_fn=None):
+    def __init__(self, model, dataset=None, loss=nn.CrossEntropyLoss(reduction='mean'), collate_fn=None):
         """Constitutes a self-supervision algorithm. All implemented algorithms are childs. Handles training, storing, and
         loading of the trained model/backbone.
 
@@ -51,6 +51,9 @@ class Supervisor():
             name (str, optional): Path to store and load models. Defaults to "store/base".
             pretrained (bool, optional): Wether to load pretrained model. Defaults to False.
         """
+        if not isinstance(self.dataset, torch.utils.data.Dataset):
+            raise("No dataset has been specified.")
+
         print(bcolors.OKGREEN + "Train with " +
               type(self).__name__ + bcolors.ENDC)
         self._load_pretrained(name, pretrained)
@@ -189,6 +192,7 @@ class Supervisor():
         """
         torch.save(self.model.state_dict(), name + ".pt")
         print(bcolors.OKBLUE + "Saved at " + name + "." + bcolors.ENDC)
+        return self
 
     def load(self, name="store/base"):
         """Loads model parameters from disk.
@@ -201,6 +205,7 @@ class Supervisor():
         model_dict = self.model.state_dict()
         model_dict.update(pretrained_dict)
         self.model.load_state_dict(model_dict)
+        return self
 
 
 class GanSupervisor():
@@ -310,7 +315,7 @@ class LabelSupervisor(Supervisor):
 
 
 class RotateNetSupervisor(Supervisor):
-    def __init__(self, dataset, rotations=[0.0, 90.0, 180.0,  -90.0], backbone=None, predictor=None, loss=nn.CrossEntropyLoss(reduction='mean')):
+    def __init__(self, dataset=None, rotations=[0.0, 90.0, 180.0,  -90.0], backbone=None, predictor=None, loss=nn.CrossEntropyLoss(reduction='mean')):
         """RotateNet like supervisor https://arxiv.org/abs/1803.07728.
 
         Args:
@@ -331,7 +336,7 @@ class RotateNetSupervisor(Supervisor):
 
 
 class ExemplarNetSupervisor(Supervisor):
-    def __init__(self, dataset, transformations=['rotation', 'crop', 'gray', 'flip', 'erase'], n_classes=8000, n_trans=100, max_elms=10, p=0.5,
+    def __init__(self, dataset=None, transformations=['rotation', 'crop', 'gray', 'flip', 'erase'], n_classes=8000, n_trans=100, max_elms=10, p=0.5,
                  backbone=None, predictor=None, loss=nn.CrossEntropyLoss(reduction='mean')):
         """ExemplarNet like supervisor https://arxiv.org/abs/1406.6909.
 
@@ -358,7 +363,7 @@ class ExemplarNetSupervisor(Supervisor):
 
 class JigsawNetSupervisor(Supervisor):
     # Not the CFN of the paper for easier implementation with common backbones and, most importantly, easier reuse
-    def __init__(self, dataset, jigsaw_path="utils/permutations_hamming_max_1000.npy", n_perms_per_image=69, crop_size=64,
+    def __init__(self, dataset=None, jigsaw_path="utils/permutations_hamming_max_1000.npy", n_perms_per_image=69, crop_size=64,
                  backbone=None, predictor=None, loss=nn.CrossEntropyLoss(reduction='mean')):
         """Jigsaw puzzle like supervisor https://arxiv.org/abs/1603.09246.
 
@@ -382,7 +387,7 @@ class JigsawNetSupervisor(Supervisor):
 
 
 class DenoiseNetSupervisor(Supervisor):
-    def __init__(self, dataset, p=0.7,
+    def __init__(self, dataset=None, p=0.7,
                  backbone=None, predictor=None, loss=nn.MSELoss(reduction='mean')):
         """Denoising autoencoder https://www.cs.toronto.edu/~larocheh/publications/icml-2008-denoising-autoencoders.pdf.
 
@@ -403,7 +408,7 @@ class DenoiseNetSupervisor(Supervisor):
 
 
 class SplitBrainNetSupervisor(Supervisor):
-    def __init__(self, dataset, l_step=2, l_offset=0, ab_step=26, a_offset=128, b_offset=128,
+    def __init__(self, dataset=None, l_step=2, l_offset=0, ab_step=26, a_offset=128, b_offset=128,
                  backbone=None, predictor=None, loss=GroupedLoss()):
         """Splitbrain autoencoder https://arxiv.org/pdf/1611.09842.pdf.
 
@@ -429,7 +434,7 @@ class SplitBrainNetSupervisor(Supervisor):
 
 
 class ContextNetSupervisor(GanSupervisor):
-    def __init__(self, dataset,  p=0.3, n_blocks=10, scale_range=(0.05, 0.1),
+    def __init__(self, dataset=None,  p=0.3, n_blocks=10, scale_range=(0.05, 0.1),
                  backbone=None, predictor=None, discriminator=None, loss=nn.MSELoss(reduction='mean'), fake_loss=nn.MSELoss(reduction='mean')):
         """Context autoencoder https://arxiv.org/pdf/1604.07379.pdf .
 
@@ -458,7 +463,7 @@ class ContextNetSupervisor(GanSupervisor):
 
 
 class BiGanSupervisor(GanSupervisor):
-    def __init__(self, dataset, shape=(32, 8, 8), rand_gen=np.random.rand,
+    def __init__(self, dataset=None, shape=(32, 8, 8), rand_gen=np.random.rand,
                  backbone=None, predictor=None, discriminator=None, loss=nn.MSELoss(reduction='mean'), fake_loss=nn.MSELoss(reduction='mean')):
         """BiGan Supervisor https://arxiv.org/pdf/1605.09782.pdf.
 
@@ -555,7 +560,7 @@ class BiGanSupervisor(GanSupervisor):
 
 
 class ContrastivePredictiveCodingSupervisor(Supervisor):
-    def __init__(self, dataset, embedding_size=128, half_crop_size=(int(28), int(28)), sides=['top', 'bottom', 'left', 'right'],
+    def __init__(self, dataset=None, embedding_size=128, half_crop_size=(int(28), int(28)), sides=['top', 'bottom', 'left', 'right'],
                  backbone=None, predictor=None, loss=CPCLoss(k=3, ignore=2).to('cuda')):
         """Contrastive Predictive Coding v2 for future prediction https://arxiv.org/pdf/1905.09272.pdf.
 
@@ -611,7 +616,7 @@ class ContrastivePredictiveCodingSupervisor(Supervisor):
 
 
 class MomentumContrastSupervisor(Supervisor):
-    def __init__(self, dataset, embedding_size=128, K=8, m=0.999,  t=0.2,
+    def __init__(self, dataset=None, embedding_size=128, K=8, m=0.999,  t=0.2,
                  backbone=None, predictor=None, loss=nn.CrossEntropyLoss(reduction='mean')):
         """Momentum contrast v2 https://arxiv.org/pdf/2003.04297.pdf.
 
@@ -697,7 +702,7 @@ class MomentumContrastSupervisor(Supervisor):
 
 
 class BYOLSupervisor(Supervisor):
-    def __init__(self, dataset, embedding_size=128, m=0.999,
+    def __init__(self, dataset=None, embedding_size=128, m=0.999,
                  backbone=None, predictor=None, loss=nn.CrossEntropyLoss(reduction='mean')):
         """Bootstrap your own latent https://arxiv.org/pdf/2006.07733.pdf.
 
@@ -772,7 +777,7 @@ class BYOLSupervisor(Supervisor):
 
 
 class InstanceDiscriminationSupervisor(Supervisor):
-    def __init__(self, dataset, embedding_size=128, n=3136, t=0.03,
+    def __init__(self, dataset=None, embedding_size=128, n=3136, t=0.03,
                  backbone=None, predictor=None, loss=nn.CrossEntropyLoss(reduction='mean')):
         """Instance Discrimination https://arxiv.org/pdf/1805.01978.pdf.
 
@@ -847,7 +852,7 @@ class InstanceDiscriminationSupervisor(Supervisor):
 
 
 class ContrastiveMultiviewCodingSupervisor(Supervisor):
-    def __init__(self, dataset, embedding_size=128, n=3136, t=0.07, memory_m=0.5,
+    def __init__(self, dataset=None, embedding_size=128, n=3136, t=0.07, memory_m=0.5,
                  backbone=None, predictor=None, loss=nn.CrossEntropyLoss(reduction='mean')):
         """Contrastive Multiview Coding https://arxiv.org/pdf/1906.05849.pdf.
 
@@ -937,7 +942,7 @@ class ContrastiveMultiviewCodingSupervisor(Supervisor):
 
 
 class PIRLSupervisor(Supervisor):
-    def __init__(self, dataset, embedding_size=128, n=3136, t=0.07, memory_m=0.5,
+    def __init__(self, dataset=None, embedding_size=128, n=3136, t=0.07, memory_m=0.5,
                  backbone=None, predictor=None, loss=nn.CrossEntropyLoss(reduction='mean')):
         """PIRL https://arxiv.org/abs/1912.01991.
 
