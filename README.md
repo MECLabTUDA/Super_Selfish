@@ -13,8 +13,10 @@ Currently support of 13 algorithms that can be run in parallel on one node of GP
   Jigsaw processed at once for performance and simplicity.
 ### Predictive
 - Denoising Autoencoder https://www.cs.toronto.edu/~larocheh/publications/icml-2008-denoising-autoencoders.pdf
-- Context Autencoder https://arxiv.org/pdf/1604.07379.pdf 
-- SplitBrain Autoencoder https://arxiv.org/pdf/1611.09842.pdf
+- Context Autencoder https://arxiv.org/pdf/1604.07379.pdf  
+  We use the Random Block technique that randomly erases multiple small rectangles.
+- SplitBrain Autoencoder https://arxiv.org/pdf/1611.09842.pdf  
+  We use the classification architecture but do not restrict the predictiction to in gamut values.
 ### Generative
 - BiGAN https://arxiv.org/pdf/1605.09782.pdf
 ### Contrastive
@@ -90,7 +92,19 @@ The training can be governed by the learning rate, the used optimizer, the batch
 def supervise(self, lr=1e-3, optimizer=torch.optim.Adam, epochs=10, batch_size=32, shuffle=True,
                   num_workers=0, name="store/base", pretrained=False, lr_scheduler=lambda optimizer: torch.optim.lr_scheduler.StepLR(optimizer, step_size=100, gamma=1.0))
 ```
-
+The supervise method of any Superviser is splitted into 5 parts such that functionalities can be easily updated/changed through overloading.
+```python
+# Loading of pretrained weights and models
+def _load_pretrained(self, name, pretrained)
+# Initialization of training specific objects
+def _init_data_optimizer(self, optimizer, batch_size, shuffle, num_workers, collate_fn, lr, lr_scheduler)
+# Wraps looping over epochs, batches. Takes care of visualizations and logging.
+def _epochs(self, epochs, train_loader, optimizer, lr_scheduler)
+# Implements one run of a model and other forward calculations
+def _forward(self, data)
+# Takes care of updating the modle, lr scheduler, ...
+def _update(self, loss, optimizer, lr_scheduler)
+```
 The full documentation is available at: TODO
 
 ## Remarks
@@ -100,5 +114,5 @@ The full documentation is available at: TODO
 
 ## TODOs
 - Multi node support, ShuffledBN
-- Refactor old datasets
+- Refactor old datasets, GANSupervisor
 - Polyak Averaging
