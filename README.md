@@ -1,12 +1,16 @@
 # Super Selfish
 A unified Pytorch framework for image-based self-supervised learning.
 ## Requirements
-pytorch torchvision
-scikit-image
-elasticdeform
-tqdm
-scipy
-colorama
+Tested with  
+CUDA 11.0 and Ubuntu 18.04  
+torch 1.7.0 torchvision 0.8.1   
+scikit-image 0.17.2  
+elasticdeform 0.4.6  
+tqdm 4.51.0  
+scipy 1.5.4  
+colorama 0.4.4  
+
+Create the folders 'store' and 'datasets'.
 
 ## Algorithms
 Currently support of 13 algorithms that can be run in parallel on one node of GPUs:
