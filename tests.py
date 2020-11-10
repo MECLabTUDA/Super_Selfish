@@ -10,17 +10,17 @@ from torchvision import transforms
 from torch import nn
 import torch
 from torch.utils.data import random_split
-
+from utils import test
 # ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 
 # +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 # Configuration
 # +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 # Choose supervisor
-supervisor_name = 'byol'
-lr = 1e-4
-epochs = 50
-batch_size = 32
+supervisor_name = 'momentum'
+lr = 1e-3
+epochs = 1
+batch_size = 48
 device = 'cuda'
 
 # ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
@@ -35,8 +35,8 @@ train_dataset, val_dataset = random_split(datasets.CIFAR10(root='./datasets/', t
                                           [45000, 5000],
                                           generator=torch.Generator().manual_seed(42))
 test_dataset = datasets.CIFAR10(root='./datasets/', train=False,
-                                download=False, transform=transforms.Resize((225, 225)))
-collate_fn = None
+                                download=False, transform=transforms.Compose([transforms.Resize((225, 225)), transforms.ToTensor()]))
+
 # +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 # Self Supervision
 # +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
@@ -79,27 +79,16 @@ supervisor.supervise(lr=lr, epochs=epochs,
 # +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 # Finetune with self supervised features
 # +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
-# Finetune on "right" target
+# Finetune on "right" target with less epochs and lower lr
+epochs = 1
+lr = 1e-3
 backbone = supervisor.get_backbone()
-predictor = Classification([4096, 1024, 256, 10])
+predictor = Classification([3136, 1024, 256, 10])
 combined = CombinedNet(backbone, predictor).to(device)
 
-# Label supervisor without self-supervision
+# Label supervisor without self-supervision and only backprob through mlp
 supervisor = LabelSupervisor(combined, val_dataset)
 # Start training
 supervisor.supervise(lr=lr, epochs=epochs,
                      batch_size=batch_size, name="store/finetuned_" + supervisor_name, pretrained=False)
-
-# +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
-# Train clean pretrained EfficientNet
-# +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
-# Train on "right" target
-backbone = ReshapeChannels(EfficientFeatures())
-predictor = Classification([4096, 1024, 256, 10])
-combined = CombinedNet(backbone, predictor).to(device)
-
-# Label supervisor without self-supervision
-supervisor = LabelSupervisor(combined, val_dataset)
-# Start training
-supervisor.supervise(lr=lr, epochs=epochs,
-                     batch_size=batch_size, name="store/clean_" + supervisor_name, pretrained=False)
+test(combined, test_dataset)

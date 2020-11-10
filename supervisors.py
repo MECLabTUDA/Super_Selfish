@@ -118,6 +118,8 @@ class Supervisor():
             tkb = tqdm(total=int(len(train_loader)), bar_format="{l_bar}%s{bar}%s{r_bar}" % (
                 Fore.GREEN, Fore.RESET), desc="Batch Process Epoch " + str(epoch_id))
             for batch_id, data in enumerate(train_loader):
+                if data[0].shape[0] != train_loader.batch_size:
+                    continue
                 optimizer.zero_grad()
 
                 loss = self._forward(data)
@@ -304,7 +306,7 @@ class GanSupervisor():
 
 class LabelSupervisor(Supervisor):
     def __init__(self, model, dataset, loss=nn.CrossEntropyLoss(reduction='mean')):
-        """Only for cleanness. Same as Supervisor.
+        """Same as supervisor but does not backbrop through backbone.
 
         Args:
             model (torch.nn.Module): The module to self supervise.
@@ -312,6 +314,26 @@ class LabelSupervisor(Supervisor):
             loss (torch.nn.Module, optional): The critierion to train on. Defaults to nn.CrossEntropyLoss(reduction='mean').
         """
         super().__init__(model, dataset, loss)
+
+    def _update(self, loss, optimizer, lr_scheduler):
+        """Backward part of training step. Calculates gradients and conducts optimization step.
+        Also handles other updates like lr scheduler.
+
+        Args:
+            loss (torch.nn.Module, optional): The critierion to train on.
+            lr_scheduler (torch.optim._LRScheduler, optional): Optional learning rate scheduler.
+            optimizer (torch.optim.Optimizer, optional): Optimizer to use.
+        """
+        loss.backward()
+
+        # Change backbone grads to zero
+        for _, current in enumerate(self.model.backbone.parameters()):
+            if current.grad is None:
+                continue
+            current.grad.fill_(0)
+
+        optimizer.step()
+        lr_scheduler.step()
 
 
 class RotateNetSupervisor(Supervisor):
@@ -658,6 +680,8 @@ class MomentumContrastSupervisor(Supervisor):
             tkb = tqdm(total=int(len(train_loader)), bar_format="{l_bar}%s{bar}%s{r_bar}" % (
                 Fore.GREEN, Fore.RESET), desc="Batch Process Epoch " + str(epoch_id))
             for batch_id, data in enumerate(train_loader):
+                if data[0].shape[0] != train_loader.batch_size:
+                    continue
                 optimizer.zero_grad()
 
                 loss = self._forward(data, queue)
@@ -732,6 +756,8 @@ class BYOLSupervisor(Supervisor):
                 Fore.GREEN, Fore.RESET), desc="Batch Process Epoch " + str(epoch_id))
             self.model_k = copy.deepcopy(self.model)
             for batch_id, data in enumerate(train_loader):
+                if data[0].shape[0] != train_loader.batch_size:
+                    continue
                 optimizer.zero_grad()
 
                 loss = self._forward(data)
@@ -814,6 +840,8 @@ class InstanceDiscriminationSupervisor(Supervisor):
             tkb = tqdm(total=int(len(train_loader)), bar_format="{l_bar}%s{bar}%s{r_bar}" % (
                 Fore.GREEN, Fore.RESET), desc="Batch Process Epoch " + str(epoch_id))
             for batch_id, data in enumerate(train_loader):
+                if data[0].shape[0] != train_loader.batch_size:
+                    continue
                 optimizer.zero_grad()
 
                 loss = self._forward(data, memory)
@@ -891,6 +919,8 @@ class ContrastiveMultiviewCodingSupervisor(Supervisor):
             tkb = tqdm(total=int(len(train_loader)), bar_format="{l_bar}%s{bar}%s{r_bar}" % (
                 Fore.GREEN, Fore.RESET), desc="Batch Process Epoch " + str(epoch_id))
             for batch_id, data in enumerate(train_loader):
+                if data[0].shape[0] != train_loader.batch_size:
+                    continue
                 optimizer.zero_grad()
 
                 loss = self._forward(data, memory)
@@ -981,6 +1011,8 @@ class PIRLSupervisor(Supervisor):
             tkb = tqdm(total=int(len(train_loader)), bar_format="{l_bar}%s{bar}%s{r_bar}" % (
                 Fore.GREEN, Fore.RESET), desc="Batch Process Epoch " + str(epoch_id))
             for batch_id, data in enumerate(train_loader):
+                if data[0].shape[0] != train_loader.batch_size:
+                    continue
                 optimizer.zero_grad()
 
                 loss = self._forward(data, memory)
