@@ -269,6 +269,7 @@ class EfficientNet(nn.Module):
     def extract_endpoints(self, inputs):
 
         endpoints = []
+        endpoints.append(inputs)
 
         # Stem
         x = self._swish(self._bn0(self._conv_stem(inputs)))
