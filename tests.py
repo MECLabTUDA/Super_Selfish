@@ -1,7 +1,7 @@
-from models import CombinedNet, Classification, ReshapeChannels, EfficientFeatures
-from efficientnet_pytorch.model import EfficientNet
+from super_selfish.models import CombinedNet, Classification, ReshapeChannels, EfficientFeatures
+from super_selfish.efficientnet_pytorch.model import EfficientNet
 import torchvision.datasets as datasets
-from supervisors import LabelSupervisor, RotateNetSupervisor, ExemplarNetSupervisor, \
+from super_selfish.supervisors import LabelSupervisor, RotateNetSupervisor, ExemplarNetSupervisor, \
     JigsawNetSupervisor, DenoiseNetSupervisor, ContextNetSupervisor, BiGanSupervisor, \
     SplitBrainNetSupervisor, ContrastivePredictiveCodingSupervisor, MomentumContrastSupervisor, \
     BYOLSupervisor, InstanceDiscriminationSupervisor, ContrastiveMultiviewCodingSupervisor, \
@@ -10,7 +10,7 @@ from torchvision import transforms
 from torch import nn
 import torch
 from torch.utils.data import random_split
-from utils import test
+from super_selfish.utils import test
 # ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 
 # +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++

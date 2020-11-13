@@ -1,20 +1,20 @@
 import torch
 from torch import nn
 from torch.nn import functional as F
-from data import visualize, RotateDataset, ExemplarDataset, JigsawDataset, DenoiseDataset, \
+from .data import visualize, RotateDataset, ExemplarDataset, JigsawDataset, DenoiseDataset, \
     ContextDataset, BiDataset, SplitBrainDataset, ContrastivePreditiveCodingDataset, AugmentationDataset, \
     AugmentationIndexedDataset, AugmentationLabIndexedDataset
-from models import ReshapeChannels, Classification, Batch2Image, GroupedLoss, \
+from .models import ReshapeChannels, Classification, Batch2Image, GroupedLoss, \
     CPCLoss, MaskedCNN, EfficientFeatures, CombinedNet, Upsampling, ChannelwiseFC, GroupedEfficientFeatures, \
     GroupedUpsampling, SequentialUpTo
 from tqdm import tqdm
 from colorama import Fore
-from utils import bcolors
+from .utils import bcolors
 import numpy as np
 import copy
-from data import batched_collate
-from data import ContrastivePredictiveCodingAugmentations, MomentumContrastAugmentations, BYOLAugmentations, PIRLAugmentations
-from memory import BatchedQueue, BatchedMemory
+from .data import batched_collate
+from .data import ContrastivePredictiveCodingAugmentations, MomentumContrastAugmentations, BYOLAugmentations, PIRLAugmentations
+from .memory import BatchedQueue, BatchedMemory
 
 
 class Supervisor():

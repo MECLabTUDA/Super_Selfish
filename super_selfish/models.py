@@ -1,8 +1,8 @@
 import torch
 from torch import nn
 from torch.nn import functional as F
-from efficientnet_pytorch.model import EfficientNet
-from utils import bcolors
+from .efficientnet_pytorch.model import EfficientNet
+from .utils import bcolors
 import numpy as np
 
 # +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
