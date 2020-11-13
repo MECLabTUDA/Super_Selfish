@@ -4,7 +4,7 @@ with open("README.md", "r") as fh:
     long_description = fh.read()
 
 setuptools.setup(
-    name="super-selfish-test",
+    name="super-selfish-e",
     version="0.0.1",
     author="Nicolas Wagner",
     author_email="nicolas_wagner@gmx.de",

@@ -439,7 +439,9 @@ class EfficientFeatures(nn.Module):
             self.model = EfficientNet.from_name(name, norm_type=norm_type)
         print(bcolors.ENDC, end="")
 
-    def forward(self, x):
+    def forward(self, x, endpoints=False):
+        if endpoints:
+            return self.model.extract_endpoints(x)
         return self.model.extract_features(x)
 
 
