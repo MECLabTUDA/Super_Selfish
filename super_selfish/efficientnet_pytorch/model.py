@@ -267,33 +267,8 @@ class EfficientNet(nn.Module):
             block.set_swish(memory_efficient)
 
     def extract_endpoints(self, inputs):
-        """Use convolution layer to extract features
-        from reduction levels i in [1, 2, 3, 4, 5].
 
-        Args:
-            inputs (tensor): Input tensor.
-
-        Returns:
-            Dictionary of last intermediate features
-            with reduction levels i in [1, 2, 3, 4, 5].
-            Example:
-                >>> import torch
-                >>> from efficientnet.model import EfficientNet
-                >>> inputs = torch.rand(1, 3, 224, 224)
-                >>> model = EfficientNet.from_pretrained('efficientnet-b0')
-                >>> endpoints = model.extract_endpoints(inputs)
-                # torch.Size([1, 16, 112, 112])
-                >>> print(endpoints['reduction_1'].shape)
-                # torch.Size([1, 24, 56, 56])
-                >>> print(endpoints['reduction_2'].shape)
-                # torch.Size([1, 40, 28, 28])
-                >>> print(endpoints['reduction_3'].shape)
-                # torch.Size([1, 112, 14, 14])
-                >>> print(endpoints['reduction_4'].shape)
-                # torch.Size([1, 1280, 7, 7])
-                >>> print(endpoints['reduction_5'].shape)
-        """
-        endpoints = dict()
+        endpoints = []
 
         # Stem
         x = self._swish(self._bn0(self._conv_stem(inputs)))
@@ -307,12 +282,12 @@ class EfficientNet(nn.Module):
                 drop_connect_rate *= float(idx) / len(self._blocks)
             x = block(x, drop_connect_rate=drop_connect_rate)
             if prev_x.size(2) > x.size(2):
-                endpoints['reduction_{}'.format(len(endpoints)+1)] = prev_x
+                endpoints.append(prev_x)
             prev_x = x
 
         # Head
         x = self._swish(self._bn1(self._conv_head(x)))
-        endpoints['reduction_{}'.format(len(endpoints)+1)] = x
+        endpoints.append(x)
 
         return endpoints
 
