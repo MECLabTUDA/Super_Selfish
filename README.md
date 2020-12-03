@@ -1,16 +1,5 @@
 # Super Selfish
 A unified Pytorch framework for image-based self-supervised learning.
-## Requirements
-Tested with  
-CUDA 11.0 and Ubuntu 18.04  
-torch 1.7.0 torchvision 0.8.1   
-scikit-image 0.17.2  
-elasticdeform 0.4.6  
-tqdm 4.51.0  
-scipy 1.5.4  
-colorama 0.4.4  
-
-Create the folders 'store' and 'datasets'.
 
 ## Algorithms
 Currently support of 13 algorithms that can be run in parallel on one node of GPUs:
@@ -32,7 +21,7 @@ Currently support of 13 algorithms that can be run in parallel on one node of GP
 - BiGAN https://arxiv.org/pdf/1605.09782.pdf
 ### Contrastive
 - Instance Discrimination https://arxiv.org/pdf/1805.01978.pdf  
-  (Memory Bank, We made it Augmentation Task with CPC Augs, Only Projection head, 1 Backbone, No Temperature)
+  (Memory Bank, We made it Augmentation Task with CPC Augs, Only Projection head, 1 Backbone, Temperature)
 - Contrastive Predictive Coding (V2) https://arxiv.org/pdf/1905.09272.pdf  
   (Batchwise, Future Prediction Task with augmentation, Target and Projection head, 1 Backbone, No Temperature)
 - Momentum Contrast (V2) https://arxiv.org/pdf/2003.04297.pdf  
@@ -48,7 +37,24 @@ Currently support of 13 algorithms that can be run in parallel on one node of GP
   Jigsaw processed at once for performance and simplicity.
 
 ## Usage
+### Requirements
+Tested with  
+CUDA 11.0 and Ubuntu 18.04  
+torch 1.7.0 torchvision 0.8.1   
+scikit-image 0.17.2  
+elasticdeform 0.4.6  
+tqdm 4.51.0  
+scipy 1.5.4  
+colorama 0.4.4  
+
+Per default Super Selfish stores network parameters in the folder "store" in your directory and looks for a "dataset" folder.
+
+### Install
+pip install super_selfish
+
 ### Training
+For example usage of all algorithms see test.py file. Be aware that pretext difficulty has to be adapted to your task and dataset. Further, contrastive methods mostly rely on enourmus batch sizes and mostly need a Multi-GPU setup.
+Momentum Contrast usually also works with small batch sizes due to the queue structure.
 Training is as easy as:
 ```python
 

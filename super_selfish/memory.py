@@ -1,6 +1,6 @@
 import torch
 import numpy as np
-
+from torch.utils.data import DataLoader
 
 class BatchedQueue():
     def __init__(self, K=8, batch_size=128, embedding_size=64, init_tensor=None):
@@ -72,19 +72,17 @@ class BatchedQueue():
 
 
 class BatchedMemory():
-    def __init__(self, size=128, batch_size=128, embedding_size=64, init_tensor=None, momentum=1.0):
+    def __init__(self, size=128, embedding_size=64, init_tensor=None, momentum=1.0):
         """Memory that works on batches.
 
         Args:
             size (int, optional): Number of memory entries. Defaults to 128.
-            batch_size (int, optional): Size of a batch. Defaults to 128.
             embedding_size (int, optional): Size of stored instances. Defaults to 64.
-            init_tensor (torch.FloatTensor, optional): Initializes qmemory with given tensor. Defaults to None.
+            init_tensor (torch.FloatTensor, optional): Initializes memorywith given tensor. Defaults to None.
             momentum (float, optional): Updates memory only partially, where 1.0 uses only the new representation whereas 0.0 uses only the old representation. Defaults to 1.0.
         """
         self.size = size
         self.embedding_size = embedding_size
-        self.batch_size = batch_size
         self.momentum = momentum
         if init_tensor is not None:
             self.memory = init_tensor
@@ -101,8 +99,14 @@ class BatchedMemory():
         """
         self.memory[idx] = k * self.momentum + \
             self.memory[idx] * (1-self.momentum)
+    
+    def load(self, name):
+        self.memory = torch.load(name)
+    
+    def save(self, name):
+        torch.save(self.memory, name)
 
-    def data(self, m):
+    def data(self, m, batch_size, but_idx):
         """Returns m many random memory entries.
 
         Args:
@@ -111,8 +115,8 @@ class BatchedMemory():
         Returns:
             torch.FloatTensor: Memory data.
         """
-        idx = np.random.choice(self.size, m * self.batch_size)
-        return self.memory[idx].reshape(self.batch_size, m, -1)
+        idx = np.random.choice(np.delete(np.arange(self.size), but_idx), m * batch_size)
+        return self.memory[idx].reshape(batch_size, m, -1)
 
     def __getitem__(self, idx):
         return self.memory[idx]

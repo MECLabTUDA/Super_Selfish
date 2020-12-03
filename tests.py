@@ -9,7 +9,7 @@ from super_selfish.supervisors import LabelSupervisor, RotateNetSupervisor, Exem
 from torchvision import transforms
 from torch import nn
 import torch
-from torch.utils.data import random_split
+from torch.utils.data import random_split, Subset
 from super_selfish.utils import test
 # ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 
@@ -17,11 +17,12 @@ from super_selfish.utils import test
 # Configuration
 # +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 # Choose supervisor
-supervisor_name = 'momentum'
-lr = 1e-3
-epochs = 1
-batch_size = 48
+supervisor_name = 'jigsaw'
+lr = 1e-2
+epochs = 500
+batch_size = 96
 device = 'cuda'
+clean = False
 
 # ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 
@@ -29,14 +30,18 @@ device = 'cuda'
 # Data
 # +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 # Start off with CIFAR
-train_dataset, val_dataset = random_split(datasets.CIFAR10(root='./datasets/', train=True,
+
+train_dataset = datasets.STL10(root='./datasets/', split='unlabeled',
                                                            download=False,
-                                                           transform=transforms.Compose([transforms.Resize((225, 225)), transforms.ToTensor()])),
-                                          [45000, 5000],
-                                          generator=torch.Generator().manual_seed(42))
-test_dataset = datasets.CIFAR10(root='./datasets/', train=False,
+                                                           transform=transforms.Compose([transforms.Resize((225, 225)), transforms.ToTensor()]))
+train_dataset = Subset(train_dataset, range(20000))
+val_dataset = datasets.STL10(root='./datasets/', split='train',
+                                                           download=False,
+                                                           transform=transforms.Compose([transforms.Resize((225, 225)), transforms.ToTensor()]))
+test_dataset = datasets.STL10(root='./datasets/', split='test',
                                 download=False, transform=transforms.Compose([transforms.Resize((225, 225)), transforms.ToTensor()]))
 
+#train_dataset = Subset(train_dataset, range(10000))
 # +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 # Self Supervision
 # +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
@@ -69,9 +74,10 @@ elif supervisor_name == 'multiview':
 elif supervisor_name == 'pirl':
     supervisor = PIRLSupervisor(train_dataset).to(device)
 
-# Start training
-supervisor.supervise(lr=lr, epochs=epochs,
-                     batch_size=batch_size, name="store/base_" + supervisor_name, pretrained=False)
+if not clean:
+    # Start training
+    supervisor.supervise(lr=lr, epochs=epochs,
+                         batch_size=batch_size, name="store/base_" + supervisor_name, pretrained=False)
 
 
 # ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
@@ -80,11 +86,13 @@ supervisor.supervise(lr=lr, epochs=epochs,
 # Finetune with self supervised features
 # +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 # Finetune on "right" target with less epochs and lower lr
-epochs = 1
+epochs = 50
 lr = 1e-3
-backbone = supervisor.get_backbone()
-predictor = Classification([3136, 1024, 256, 10])
-combined = CombinedNet(backbone, predictor).to(device)
+
+if clean:
+    supervisor.load(name="store/base_" + supervisor_name)
+combined = CombinedNet(supervisor.get_backbone(), Classification(
+        layers=[3136, 10])).to(device)
 
 # Label supervisor without self-supervision and only backprob through mlp
 supervisor = LabelSupervisor(combined, val_dataset)

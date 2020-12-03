@@ -361,7 +361,7 @@ class ExemplarDataset(Dataset):
 
 
 class JigsawDataset(Dataset):
-    def __init__(self, dataset, transformations=lambda x: ContrastivePredictiveCodingAugmentations(x), jigsaw_path="utils/permutations_hamming_max_1000.npy", n_perms_per_image=69, crop_size=64):
+    def __init__(self, dataset, transformations=lambda x: JigsawAugmentations(x), jigsaw_path="super_selfish/utils/permutations_hamming_max_1000.npy", n_perms_per_image=69, crops=2, crop_size=64):
         """Jigsaw puzzle dataset.
 
         Args:
@@ -376,7 +376,8 @@ class JigsawDataset(Dataset):
         # We fix the number of permutations per image
         self.perms_per_image = np.random.choice(
             self.permutations.shape[0], len(dataset) * n_perms_per_image).reshape(len(dataset), n_perms_per_image)
-        self.s = self.dataset[0][0].shape[1] // 3
+        self.s = self.dataset[0][0].shape[1] // crops
+        self.crops = crops
         self.trans = transforms.Compose([transforms.RandomCrop(
             crop_size, pad_if_needed=True), transforms.Resize((self.s, self.s)),
             transforms.Lambda(transformations)])
@@ -389,7 +390,7 @@ class JigsawDataset(Dataset):
         perm = self.permutations[perm_id]
         # Looking for a cleaner and more beautifull way
         img_out = jigsaw(transforms.functional.to_pil_image(
-            self.dataset[idx][0]), perm, self.s, self.trans)
+            self.dataset[idx][0]), perm, self.s, self.trans, crops=self.crops, normed=True)
         img_out = transforms.functional.to_tensor(img_out)
         return img_out, perm_id
 
@@ -398,7 +399,7 @@ class JigsawDataset(Dataset):
 # +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 
 
-def visualize(dataset, idx=0, folder_path='visualization/', batched=False):
+def visualize(dataset, idx=0, folder_path='', batched=False):
     """Deprecated.
     """
     if batched:
@@ -422,7 +423,7 @@ def batched_collate(data):
 # Transformations
 # +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 
-def jigsaw(img, perm, s, trans=lambda x: x, normed=True):
+def jigsaw(img, perm, s, trans=lambda x: x, normed=True, crops=3):
     """Jigsaws image into crops and shuffles.
 
     Args:
@@ -436,9 +437,9 @@ def jigsaw(img, perm, s, trans=lambda x: x, normed=True):
         PIL.Image: Output image
     """
     img_out = img.copy()
-    for n in range(9):
-        i = (n // 3) * s
-        j = (n % 3) * s
+    for n in range(crops * crops):
+        i = (n // crops) * s
+        j = (n % crops) * s
 
         patch = transforms.functional.to_tensor(
             trans(img.crop(box=(i, j, i + s, j + s))))
@@ -454,8 +455,8 @@ def jigsaw(img, perm, s, trans=lambda x: x, normed=True):
 
         normed_patch = transforms.functional.to_pil_image(normed_patch)
 
-        i_out = (perm[n] // 3) * s
-        j_out = (perm[n] % 3) * s
+        i_out = (perm[n] // crops) * s
+        j_out = (perm[n] % crops) * s
 
         img_out.paste(normed_patch, box=(
             i_out, j_out, i_out + s, j_out + s))
@@ -580,4 +581,12 @@ def PIRLAugmentations(img):
     random.shuffle(perm)
 
     img = jigsaw(img, perm, s, trans=t1, normed=False)
+    return img
+
+def JigsawAugmentations(img):
+
+    pool = transforms.Compose([transforms.ColorJitter(0.4, 0.4, 0.4, 0.1),
+                               transforms.RandomGrayscale(p=0.3)])
+
+    img = pool(img)
     return img

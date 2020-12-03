@@ -366,12 +366,12 @@ class SequentialUpTo(nn.Module):
 
 
 class CombinedNet(nn.Module):
-    def __init__(self, backbone=None, predictor=None, distributed=True):
+    def __init__(self, backbone=None, predictor=None, distributed=False):
         """Main building block of Super Selfish. Combines backbone features with a prediction head.
         Args:
             backbone (torch.nn.Module, optional): Backbone network. Defaults to None.
             predictor (torch.nn.Module, optional): Prediction network. Defaults to None.
-            distributed (bool, optional): Wether to use nn.DataParallel. Defaults to True.
+            distributed (bool, optional): Wether to use nn.DataParallel, also handled in supervisor. Defaults to False.
         Raises:
             NotImplementedError: Backbone and Precitor must be specified.
         """
@@ -379,14 +379,9 @@ class CombinedNet(nn.Module):
         if backbone is None or predictor is None:
             raise NotImplementedError(
                 "You need to specify a backbone and a predictor network.")
-        self.backbone = nn.DataParallel(backbone) if distributed else backbone
-        if isinstance(predictor, nn.ModuleDict) and distributed:
-            self.predictor = nn.ModuleDict(
-                {k: nn.DataParallel(v) for k, v in predictor.items()})
-        else:
-            self.predictor = nn.DataParallel(
-                predictor) if distributed else predictor
-        self.model = nn.Sequential(self.backbone, self.predictor)
+        self.backbone = backbone
+        self.predictor = predictor
+        self.model = nn.DataParallel(nn.Sequential(self.backbone, self.predictor)) if distributed else nn.Sequential(self.backbone, self.predictor)
 
     def forward(self, x):
         return self.model(x)
