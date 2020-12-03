@@ -394,8 +394,6 @@ class JigsawNetSupervisor(Supervisor):
                          JigsawDataset(
                              dataset, jigsaw_path=jigsaw_path, n_perms_per_image=n_perms_per_image, crops=crops, crop_size=crop_size),
                          loss)
-        visualize(JigsawDataset(
-                             dataset, jigsaw_path=jigsaw_path, n_perms_per_image=n_perms_per_image, crop_size=crop_size))
 
 
 class DenoiseNetSupervisor(Supervisor):

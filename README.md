@@ -9,7 +9,8 @@ Currently support of 13 algorithms that can be run in parallel on one node of GP
   We always process full images but apply scaling and translation.
 - RotateNet https://arxiv.org/abs/1803.07728 
 - Jigsaw Puzzle https://arxiv.org/abs/1603.09246  
-  We use the stronger set of augmentations used in CPC to prevent shortcuts but sill apply random cropping within each patch to avoid border signals.    
+  We apply random cropping within each patch to avoid border signals.  
+  3x3 jigsaw too complicated for easy dataset, per default 2x2.  
   Jigsaw processed at once for performance and simplicity.
 ### Predictive
 - Denoising Autoencoder https://www.cs.toronto.edu/~larocheh/publications/icml-2008-denoising-autoencoders.pdf

@@ -5,7 +5,7 @@ with open("README.md", "r") as fh:
 
 setuptools.setup(
     name="super-selfish",
-    version="0.0.1",
+    version="0.0.2",
     author="Nicolas Wagner",
     author_email="nicolas_wagner@gmx.de",
     description="A self-supervision PyTorch framework",
