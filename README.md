@@ -52,7 +52,7 @@ Per default Super Selfish stores network parameters in the folder "store" in you
 
 ### Install
 ```python
-pip install super_selfish
+pip install super-selfish
 ```
 
 ### Training
