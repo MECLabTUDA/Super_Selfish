@@ -51,11 +51,15 @@ colorama 0.4.4
 Per default Super Selfish stores network parameters in the folder "store" in your directory and looks for a "dataset" folder.
 
 ### Install
+```python
 pip install super_selfish
+```
 
 ### Training
-For example usage of all algorithms see test.py file. Be aware that pretext difficulty has to be adapted to your task and dataset. Further, contrastive methods mostly rely on enourmus batch sizes and mostly need a Multi-GPU setup.
-Momentum Contrast usually also works with small batch sizes due to the queue structure.
+For usage examples of all algorithms see test.py file.  
+Be aware that pretext difficulty has to be adapted to your task and dataset.  
+Further, contrastive methods mostly rely on enourmus batch sizes and mostly need a Multi-GPU setup.
+Momentum Contrast typically also works with small batch sizes due to the queued structure.
 Training is as easy as:
 ```python
 
