@@ -60,6 +60,7 @@ For usage examples of all algorithms see test.py file.
 Be aware that pretext difficulty has to be adapted to your task and dataset.  
 Further, contrastive methods mostly rely on enourmus batch sizes and mostly need a Multi-GPU setup.
 Momentum Contrast typically also works with small batch sizes due to the queued structure.
+<br><br>
 Training is as easy as:
 ```python
 
