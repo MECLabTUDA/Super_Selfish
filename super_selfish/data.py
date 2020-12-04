@@ -61,6 +61,26 @@ class AugmentationDataset(Dataset):
 
         return img1, img2
 
+class LDataset(Dataset):
+    def __init__(self, dataset):
+        """Extracts the L channel of an RGB image and keeps the label the same.
+
+        Args:
+            dataset (torch.utils.data.Dataset)): The backbone dataset.
+        """    
+        self.dataset = dataset
+
+    def __len__(self):
+        return len(self.dataset)
+
+    def __getitem__(self, idx):
+        img1, label = self.dataset[idx]
+        img1 = rgb2lab(img1.permute(1, 2, 0).cpu().numpy())
+
+        img1_l = torch.from_numpy(img1).permute(
+            2, 0, 1)[0:1, :, :]
+
+        return img1_l, label
 
 class AugmentationIndexedDataset(AugmentationDataset):
     def __init__(self, dataset, transformations, transformations2=None, clean1=False, clean2=False):
@@ -210,7 +230,7 @@ class DenoiseDataset(Dataset):
 
 
 class BiDataset(Dataset):
-    def __init__(self, dataset, shape=(32, 8, 8), rand_gen=np.random.rand):
+    def __init__(self, dataset, shape=(32, 7, 7), rand_gen=np.random.rand):
         """BiGAN dataset.
 
         Args:
@@ -361,18 +381,20 @@ class ExemplarDataset(Dataset):
 
 
 class JigsawDataset(Dataset):
-    def __init__(self, dataset, transformations=lambda x: JigsawAugmentations(x), jigsaw_path="super_selfish/utils/permutations_hamming_max_1000.npy", n_perms_per_image=69, crops=2, crop_size=64):
+    def __init__(self, dataset, transformations=lambda x: JigsawAugmentations(x), jigsaw_path="super_selfish/utils/permutations_hamming_max_1000.npy", n_perms_per_image=24, total_perms=24, crops=2, crop_size=112):
         """Jigsaw puzzle dataset.
 
         Args:
             dataset (torch.utils.data.Dataset)): The backbone dataset.
             transformations ([type], optional): Transformations in addition to random patch cropping. Defaults to ContrastivePredictiveCodingAugmentations.
             jigsaw_path (str, optional): The path to the used permutations. Defaults to "utils/permutations_hamming_max_1000.npy".
-            n_perms_per_image (int, optional): Number of permutations per image. Defaults to 69.
-            crop_size (int, optional): Crop size, implicitly determines the distance between crops. Defaults to 64.
+            n_perms_per_image (int, optional): Number of permutations per image. Defaults to 24.
+            total_perms (int, optional): Number of perms in total. Defaults to 24.
+            crops (int, optional): Number of patches is crops x crops. Defaults to 2.
+            crop_size (int, optional): Crop size, implicitly determines the distance between crops. Defaults to 112.
         """
         self.dataset = dataset
-        self.permutations = np.load(jigsaw_path)
+        self.permutations = np.load(jigsaw_path)[:total_perms]
         # We fix the number of permutations per image
         self.perms_per_image = np.random.choice(
             self.permutations.shape[0], len(dataset) * n_perms_per_image).reshape(len(dataset), n_perms_per_image)

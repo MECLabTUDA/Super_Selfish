@@ -19,7 +19,8 @@ Currently support of 13 algorithms that can be run in parallel on one node of GP
 - SplitBrain Autoencoder https://arxiv.org/pdf/1611.09842.pdf  
   We use the classification architecture but do not restrict the predictiction to in gamut values.
 ### Generative
-- BiGAN https://arxiv.org/pdf/1605.09782.pdf
+- BiGAN https://arxiv.org/pdf/1605.09782.pdf  
+  Not parallel.
 ### Contrastive
 - Instance Discrimination https://arxiv.org/pdf/1805.01978.pdf  
   (Memory Bank, We made it Augmentation Task with CPC Augs, Only Projection head, 1 Backbone, Temperature)
@@ -131,6 +132,7 @@ def _update(self, loss, optimizer, lr_scheduler)
 The full documentation is available at: TODO
 
 ## Remarks
+- Super Selfish is constructed to work out of the box on 225x225 images but can be adapted to other resolutions with minor effort. An adaptive design is to follow soon.
 - If not precisley stated in a paper, we use the CPC image augmentations. Some augmentations or implementation details may be different to the original papers as we aim for a comparable unified framework.
 - We use an EfficientNet https://github.com/lukemelas/EfficientNet-PyTorch implementation as the defaul backbone/feature extractor. We use a customized version that can be switched from batch norm to layer norm.
 - Please feel free to open an issue regarding bugs and/or other algorithms that should be added.

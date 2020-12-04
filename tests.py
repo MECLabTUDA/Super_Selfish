@@ -11,16 +11,17 @@ from torch import nn
 import torch
 from torch.utils.data import random_split, Subset
 from super_selfish.utils import test
+from super_selfish.data import LDataset
 # ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 
 # +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 # Configuration
 # +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 # Choose supervisor
-supervisor_name = 'jigsaw'
+supervisor_name = 'splitbrain'
 lr = 1e-2
-epochs = 500
-batch_size = 96
+epochs = 1
+batch_size = 32
 device = 'cuda'
 clean = False
 
@@ -71,6 +72,8 @@ elif supervisor_name == 'discrimination':
     supervisor = InstanceDiscriminationSupervisor(train_dataset).to(device)
 elif supervisor_name == 'multiview':
     supervisor = ContrastiveMultiviewCodingSupervisor(train_dataset).to(device)
+    val_dataset = LDataset(val_dataset)
+    test_dataset = LDataset(test_dataset)
 elif supervisor_name == 'pirl':
     supervisor = PIRLSupervisor(train_dataset).to(device)
 
@@ -86,13 +89,13 @@ if not clean:
 # Finetune with self supervised features
 # +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 # Finetune on "right" target with less epochs and lower lr
-epochs = 50
+epochs = 1
 lr = 1e-3
 
 if clean:
     supervisor.load(name="store/base_" + supervisor_name)
 combined = CombinedNet(supervisor.get_backbone(), Classification(
-        layers=[3136, 10])).to(device)
+        layers=[3136 if supervisor_name != 'bi' else 3136 // 2, 10])).to(device)
 
 # Label supervisor without self-supervision and only backprob through mlp
 supervisor = LabelSupervisor(combined, val_dataset)

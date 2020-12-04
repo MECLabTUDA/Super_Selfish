@@ -9,6 +9,18 @@ import numpy as np
 # Library Modules
 # +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 
+class View(nn.Module):
+    def __init__(self, shape):
+        """View as module for convenience
+
+        Args:
+            shape ([type]): New shape.
+        """        
+        super().__init__()
+        self.shape = shape,  
+
+    def forward(self, x):
+        return x.view(*self.shape)
 
 class Classification(nn.Module):
     def __init__(self, layers=[3136, 1024, 256, 4], activation=nn.PReLU, batchnorm=True):
@@ -29,16 +41,18 @@ class Classification(nn.Module):
               for i in range(1, len(layers))])
 
     def forward(self, x):
+        if len(x.shape) == 4:
+            x = x.view(x.shape[0], -1)
         return self.model(x)
 
 
 class ChannelwiseFC(nn.Module):
-    def __init__(self, backbone=None, layers=[64, 64, 64, 64], activation=nn.PReLU, batchnorm=True):
+    def __init__(self, layers=[49, 49, 49, 49], activation=nn.PReLU, batchnorm=True):
         """Channelwise FC MLP as used in context autoencoders.
 
         Args:
             backbone (torch.nn.Module, optional): Flat network to decorate. Defaults to None.
-            layers (list, optional): Size of layers. Defaults to [64, 64, 64, 64].
+            layers (list, optional): Size of layers. Defaults to [49, 49, 49, 49].
             activation (torch.nn.Module identifier, optional): Activation function identifier. Defaults to nn.PReLU.
             batchnorm (bool, optional): Wether to use batchnorm. Defaults to True.
 
@@ -46,10 +60,6 @@ class ChannelwiseFC(nn.Module):
             NotImplementedError: Works only on top of another flat network.
         """
         super().__init__()
-        if backbone is None:
-            raise NotImplementedError(
-                "You need to specify a backbone network.")
-        self.backbone = backbone
         self.model = nn.Sequential(
             *[nn.Sequential(
                 nn.Linear(in_features=layers[i - 1], out_features=layers[i]),
@@ -59,15 +69,15 @@ class ChannelwiseFC(nn.Module):
               for i in range(1, len(layers))])
 
     def forward(self, x):
-        x = self.backbone(x)
         x_shape = x.shape
         x = x.reshape(x_shape[0], x_shape[1], -1)
         x = x.reshape(-1, x.shape[2])
-        return self.model(x).reshape(x_shape)
+        x = self.model(x).reshape(x_shape)
+        return x
 
 
 class Upsampling(nn.Module):
-    def __init__(self, layers=[1280, 512, 256, 128, 3], kernel_size=5, stride=2, padding=2, activation=nn.PReLU, batchnorm=True):
+    def __init__(self, layers=[1280, 512, 256, 128, 3], kernel_size=4, stride=2, padding=1, activation=nn.PReLU, batchnorm=True, input_resolution=None, out_resolution=(225,225)):
         """Standard upconvolution network.
 
         Args:
@@ -77,8 +87,12 @@ class Upsampling(nn.Module):
             padding (int, optional): Size of padding. Defaults to 2.
             activation (torch.nn.Module identifier, optional): Activation function identifier. Defaults to nn.PReLU.
             batchnorm (bool, optional): Wether to use batchnorm. Defaults to True.
+            input_resolution ((int, int), optional): Reshape flat input. Set to None if not needed. Defaults to (7,7).
+            out_resolution ((int, int), optional): Final resizing layer, may be handy for slight deviations. Set to None if not needed. Defaults to (225,225).
         """
         super().__init__()
+        self.input_resolution = input_resolution
+        self.out_resolution = out_resolution
         self.model = nn.Sequential(
             *[nn.Sequential(
                 nn.ConvTranspose2d(
@@ -89,7 +103,12 @@ class Upsampling(nn.Module):
               for i in range(1, len(layers))])
 
     def forward(self, x):
-        return self.model(x)
+        if self.input_resolution is not None:
+            x = x.view(x.shape[0], -1, self.input_resolution[0], self.input_resolution[1])
+        x = self.model(x)
+        if self.out_resolution is not None:
+            x = F.interpolate(x, self.out_resolution)
+        return x
 
 
 class MaskedCNN(nn.Module):
@@ -134,7 +153,7 @@ class MaskedCNN(nn.Module):
 
 
 class GroupedUpsampling(nn.Module):
-    def __init__(self, layers=[1280, 512, 256, 128], groups=np.array([50, 100]), kernel_size=5, stride=2, padding=2, activation=nn.ReLU, batchnorm=True):
+    def __init__(self, layers=[1280, 512, 256, 128], groups=np.array([50, 100]), kernel_size=4, stride=2, padding=1, activation=nn.ReLU, batchnorm=True, out_resolution=(225,225)):
         """Wraps grouping on upsampling.
 
         Args:
@@ -145,12 +164,13 @@ class GroupedUpsampling(nn.Module):
             padding (int, optional): Size of padding. Defaults to 2.
             activation (torch.nn.Module identifier, optional): Activation function identifier. Defaults to nn.PReLU.
             batchnorm (bool, optional): Wether to use batchnorm. Defaults to True.
+            out_resolution ((int, int), optional): Final resizing layer, may be handy for slight deviations. Set to None if not needed. Defaults to (225,225).
         """
         super().__init__()
 
         self.groups = groups
         self.c_per_group = layers[0]
-
+        self.out_resolution = out_resolution
         self.models = nn.ModuleList([nn.Sequential(
             *[nn.Sequential(
                 nn.ConvTranspose2d(
@@ -169,8 +189,8 @@ class GroupedUpsampling(nn.Module):
     def forward(self, x):
         features = []
         for i in range(len(self.groups)):
-            features.append(self.models[i](
-                x[:, self.c_per_group * i: self.c_per_group * (i+1), :, :]))
+            features.append(F.interpolate(self.models[i](
+                x[:, self.c_per_group * i: self.c_per_group * (i+1), :, :]), self.out_resolution))
         return torch.cat(features, dim=1)
 
 
@@ -236,13 +256,13 @@ class GroupedLoss(nn.Module):
 
 
 class CPCLoss(nn.Module):
-    def __init__(self, target_shaper=ReshapeChannels(nn.Identity(), in_channels=1280, out_channels=64,
+    def __init__(self, target_shaper=ReshapeChannels(nn.Identity(), in_channels=64, out_channels=64,
                                                      kernel_size=1, padding=0, activation=nn.Identity, flat=False),
                  k=2, ignore=3, N=2, reduction='mean'):
         """Implements CPC v2 loss.
 
         Args:
-            target_shaper ([torch.nn.Module], optional): Target head of CPC. Defaults to ReshapeChannels(nn.Identity(), in_channels=1280, out_channels=64, kernel_size=1, padding=0, activation=nn.Identity, flat=False).
+            target_shaper ([torch.nn.Module], optional): Target head of CPC. Defaults to ReshapeChannels(nn.Identity(), in_channels=64, out_channels=64, kernel_size=1, padding=0, activation=nn.Identity, flat=False).
             k (int, optional): How many rows to predict. Defaults to 2.
             ignore (int, optional): How many rows to ignore. Defaults to 3.
             N (int, optional): Number of false targets. Defaults to 2.
@@ -287,27 +307,22 @@ class CPCLoss(nn.Module):
 
 
 class Batch2Image(nn.Module):
-    def __init__(self, backbone=None, new_shape=(7, 7)):
+    def __init__(self, new_shape=(7, 7)):
         """ Concats batch of crops into one image.
 
         Args:
-            backbone (torch.nn.Module, optional): ConvNet to decorate. Defaults to None.
             new_shape (tuple, optional): Output image shape. Defaults to (7, 7).
 
         Raises:
             NotImplementedError: Works only on top of another ConvNet.
         """
-        # Expects BxCx1x1x1...., should be made more robust
         super().__init__()
-        if backbone is None:
-            raise NotImplementedError(
-                "You need to specify a backbone network.")
-        self.backbone = backbone
+        # Expects BxCx1x1x1...., should be made more robust
         self.new_shape = new_shape
         self.split = new_shape[0] * new_shape[1]
 
     def forward(self, x):
-        x = self.backbone(x).squeeze()
+        x = x.squeeze()
         x = torch.stack(torch.split(x, self.split, dim=0))
         x = x.reshape(x.shape[0], self.new_shape[0],
                       self.new_shape[1], -1).permute(0, 3, 1, 2)
@@ -344,24 +359,26 @@ class CroppedSiamese(nn.Module):
                                j * self.half_crop_size: (j+2) * self.half_crop_size])
 
         crops = torch.cat(crops, dim=0)
-        print(crops.shape)
 
         return self.model(crops)
 
 
 class SequentialUpTo(nn.Module):
-    def __init__(self, *args):
-        """ Sequential container like nn.Sequential that stops after a given layer (including)
+    def __init__(self, *args, up_to=-1):
+        """Sequential container like nn.Sequential that stops after a given layer (including)
+
+        Args:
+            up_to (int, optional): Layer to stop. Defaults to -1, no stopping.
         """
         super().__init__()
         self.ordered_models = nn.Sequential(*args)
+        self.up_to = up_to
 
     def forward(self, x, up_to=-1):
         for i, model in enumerate(self.ordered_models):
             x = model(x)
-            if i == up_to:
+            if i == up_to or i == self.up_to:
                 break
-
         return x
 
 
@@ -449,16 +466,21 @@ class GroupedEfficientFeatures(nn.Module):
         super().__init__()
         print(bcolors.OKBLUE, end="")
         self.groups = groups
+        channels_per_group = 1280 // len(groups)
         self.cum_groups = np.concatenate((
             np.zeros(1), np.cumsum(groups).astype(float))).astype(int)
         if pretrained:
             self.expand = nn.ModuleList(
                 [nn.Conv2d(groups[i], 3, 1) for i in range(len(self.groups))])
+            self.squeeze = nn.ModuleList(
+                [nn.Conv2d(1280, channels_per_group, 1) for i in range(len(self.groups))])
             self.models = nn.ModuleList(
                 [EfficientNet.from_pretrained(name, norm_type=norm_type) for i in range(len(self.groups))])
         else:
             self.expand = nn.ModuleList(
                 [nn.Conv2d(groups[i], 3, 1) for i in range(len(self.groups))])
+            self.squeeze = nn.ModuleList(
+                [nn.Conv2d(1280, channels_per_group, 1) for i in range(len(self.groups))])
             self.models = nn.ModuleList(
                 [EfficientNet.from_name(name, norm_type=norm_type) for i in range(len(self.groups))])
         print(bcolors.ENDC, end="")
@@ -466,6 +488,6 @@ class GroupedEfficientFeatures(nn.Module):
     def forward(self, x):
         features = []
         for i in range(len(self.groups)):
-            features.append(self.models[i].extract_features(self.expand[i](
-                x[:, self.cum_groups[i]:self.cum_groups[i+1], :, :])))
+            features.append(self.squeeze[i](self.models[i].extract_features(self.expand[i](
+                x[:, self.cum_groups[i]:self.cum_groups[i+1], :, :]))))
         return torch.cat(features, dim=1)

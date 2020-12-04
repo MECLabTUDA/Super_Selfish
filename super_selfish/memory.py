@@ -106,16 +106,17 @@ class BatchedMemory():
     def save(self, name):
         torch.save(self.memory, name)
 
-    def data(self, m, batch_size, but_idx):
+    def data(self, m, batch_size, but_idx=None):
         """Returns m many random memory entries.
 
         Args:
             m (int): Number of entries to return.
+            but_idx ([int], optional): Which indices to ignore. Defaults to None.
 
         Returns:
             torch.FloatTensor: Memory data.
         """
-        idx = np.random.choice(np.delete(np.arange(self.size), but_idx), m * batch_size)
+        idx = np.random.choice(np.delete(np.arange(self.size), but_idx) if but_idx is not None else np.arange(self.size), m * batch_size)
         return self.memory[idx].reshape(batch_size, m, -1)
 
     def __getitem__(self, idx):

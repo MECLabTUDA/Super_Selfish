@@ -6,7 +6,7 @@ from .data import visualize, RotateDataset, ExemplarDataset, JigsawDataset, Deno
     AugmentationIndexedDataset, AugmentationLabIndexedDataset
 from .models import ReshapeChannels, Classification, Batch2Image, GroupedLoss, \
     CPCLoss, MaskedCNN, EfficientFeatures, CombinedNet, Upsampling, ChannelwiseFC, GroupedEfficientFeatures, \
-    GroupedUpsampling, SequentialUpTo
+    GroupedUpsampling, SequentialUpTo, View
 from tqdm import tqdm
 from colorama import Fore
 from .utils import bcolors
@@ -119,10 +119,9 @@ class Supervisor():
             loss_sum = 0
             tkb.set_description(desc="Batch Process Epoch " + str(epoch_id))
             for batch_id, data in enumerate(train_loader):
-                if data[0].shape[0] != train_loader.batch_size:
+                if data[0].shape[0] != train_loader.batch_size and batch_id == (len(train_loader) - 1):
                     continue
                 optimizer.zero_grad()
-
                 loss = self._forward(data)
                 loss_sum += loss.item()
                 tkb.set_postfix(loss='{:3f}'.format(
@@ -178,7 +177,10 @@ class Supervisor():
         Returns:
             torch.nn.Module: The backbone network.
         """
-        return self.model.module.backbone
+        try:
+            return self.model.module.backbone
+        except:
+            return self.model.backbone
 
     def get_predictor(self):
         """Extracts the predictor network
@@ -186,7 +188,10 @@ class Supervisor():
         Returns:
             torch.nn.Module: The backbone network.
         """
-        return self.model.module.predictor
+        try:
+            return self.model.module.predictor
+        except:
+            return self.model.predictor
 
     def save(self, name="store/base"):
         """Saves model parameters to disk.
@@ -218,8 +223,8 @@ class Supervisor():
 
 class GanSupervisor():
     def __init__(self, model, discriminator, dataset, loss=nn.BCELoss(reduction='mean'), fake_loss=None):
-        self.model = model
-        self.discriminator = discriminator
+        self.model = nn.DataParallel(model)
+        self.discriminator = nn.DataParallel(discriminator)
         self.dataset = dataset
         self.loss = loss
         self.fake_loss = fake_loss
@@ -293,10 +298,17 @@ class GanSupervisor():
         return self
 
     def get_backbone(self):
-        return self.model.backbone
+        try:
+            return self.model.module.backbone
+        except:
+            return self.model.backbone
+
 
     def get_predictor(self):
-        return self.model.backbone
+        try:
+            return self.model.module.predictor
+        except:
+            return self.model.predictor
 
     def save(self, name="store/base"):
         torch.save(self.model.state_dict(), name + ".pt")
@@ -323,6 +335,7 @@ class LabelSupervisor(Supervisor):
         for _, current in enumerate(self.model.module.backbone.parameters()):
             current.requires_grad = False
 
+
 class RotateNetSupervisor(Supervisor):
     def __init__(self, dataset=None, rotations=[0.0, 90.0, 180.0,  -90.0], backbone=None, predictor=None, loss=nn.CrossEntropyLoss(reduction='mean')):
         """RotateNet like supervisor https://arxiv.org/abs/1803.07728.
@@ -345,13 +358,12 @@ class RotateNetSupervisor(Supervisor):
 
 
 class ExemplarNetSupervisor(Supervisor):
-    def __init__(self, dataset=None, transformations=['rotation', 'crop', 'gray', 'flip', 'erase'], n_classes=8000, n_trans=100, max_elms=10, p=0.5,
+    def __init__(self, dataset=None, n_classes=8000, n_trans=100, max_elms=10, p=0.5,
                  backbone=None, predictor=None, loss=nn.CrossEntropyLoss(reduction='mean')):
         """ExemplarNet like supervisor https://arxiv.org/abs/1406.6909.
 
         Args:
             dataset (torch.utils.data.Dataset): The dataset to train on.
-            transformations (list, optional): Type of elementar transformations to use. Defaults to ['rotation', 'crop', 'gray', 'flip', 'erase'].
             n_classes (int, optional): Number of classes, i.e. the subset size of the dataset. Defaults to 8000.
             n_trans (int, optional): Number of combined transformations. Defaults to 100.
             max_elms (int, optional): Number of elementar transformations per combined transformation. Defaults to 10.
@@ -372,14 +384,16 @@ class ExemplarNetSupervisor(Supervisor):
 
 class JigsawNetSupervisor(Supervisor):
     # Not the CFN of the paper for easier implementation with common backbones and, most importantly, easier reuse
-    def __init__(self, dataset=None, jigsaw_path="super_selfish/utils/four_perms.npy", n_perms_per_image=24, crops=2, crop_size=112,
+    def __init__(self, dataset=None, jigsaw_path="super_selfish/utils/four_perms.npy", n_perms_per_image=24, total_perms=24, crops=2, crop_size=112,
                  backbone=None, predictor=None, loss=nn.CrossEntropyLoss(reduction='mean')):
         """Jigsaw puzzle like supervisor https://arxiv.org/abs/1603.09246.
+            We use layer norm.
 
         Args:
             dataset (torch.utils.data.Dataset): The dataset to train on.
             jigsaw_path (str, optional): The path to the used permutations. Defaults to "super_selfish/utils/four_perms.npy".
             n_perms_per_image (int, optional): Number of permutations per image. Defaults to 24.
+            total_perms (int, optional): Number of perms in total. Defaults to 24.
             crops (int, optional): Number of patches is crops x crops. Defaults to 2.
             crop_size (int, optional): Crop size, implicitly determines the distance between crops. Defaults to 112.
             backbone (torch.nn.Module, optional): Backbone network. Defaults to None, resulting in an EfficientNet backbone.
@@ -389,10 +403,10 @@ class JigsawNetSupervisor(Supervisor):
         super().__init__(CombinedNet(ReshapeChannels(EfficientFeatures(norm_type='layer'))
                                      if backbone is None else backbone,
                                      Classification(
-                                         layers=[3136, 1024, 1024, 24])
+                                         layers=[3136, 1024, 1024, total_perms])
                                      if predictor is None else predictor),
                          JigsawDataset(
-                             dataset, jigsaw_path=jigsaw_path, n_perms_per_image=n_perms_per_image, crops=crops, crop_size=crop_size),
+                             dataset, jigsaw_path=jigsaw_path, n_perms_per_image=n_perms_per_image, total_perms=total_perms, crops=crops, crop_size=crop_size),
                          loss)
 
 
@@ -408,10 +422,10 @@ class DenoiseNetSupervisor(Supervisor):
             predictor (torch.nn.Module, optional): Prediction network. Defaults to None, resulting in a standard upsampling ConvNet.
             loss ([type], optional): The critierion to train on. Defaults to nn.MSELoss(reduction='mean').
         """
-        super().__init__(CombinedNet(EfficientFeatures()
+        super().__init__(CombinedNet(ReshapeChannels(EfficientFeatures(), flat=False)
                                      if backbone is None else backbone,
                                      Upsampling(
-                                         layers=[1280, 512, 256, 128, 64, 3])
+                                         layers=[64, 256, 256, 128, 64, 3])
                                      if predictor is None else predictor),
                          DenoiseDataset(dataset, p=p),
                          loss)
@@ -436,7 +450,7 @@ class SplitBrainNetSupervisor(Supervisor):
         super().__init__(CombinedNet(GroupedEfficientFeatures()
                                      if backbone is None else backbone,
                                      GroupedUpsampling(
-                                         layers=[1280, 512, 256, 128, 64])
+                                         layers=[640, 512, 256, 128, 64])
                                      if predictor is None else predictor),
                          SplitBrainDataset(dataset, l_step=l_step, l_offset=l_offset - 1,
                                            ab_step=ab_step, a_offset=a_offset, b_offset=b_offset),
@@ -459,10 +473,11 @@ class ContextNetSupervisor(GanSupervisor):
             loss ([type], optional): The critierion to train on.. Defaults to nn.MSELoss(reduction='mean').
             fake_loss ([type], optional): The advesarial criterion. Defaults to nn.MSELoss(reduction='mean').
         """
-        super().__init__(CombinedNet(ChannelwiseFC(EfficientFeatures())
+        super().__init__(CombinedNet(ReshapeChannels(EfficientFeatures(), flat=False)
                                      if backbone is None else backbone,
+                                     nn.Sequential(ChannelwiseFC(),
                                      Upsampling(
-                                         layers=[1280, 512, 256, 128, 64, 3])
+                                         layers=[64, 256, 256, 128, 64, 3]))
                                      if predictor is None else predictor),
                          CombinedNet(ReshapeChannels(EfficientFeatures()), Classification(
                              layers=[3136,  1024, 256, 1])) if discriminator is None else discriminator,
@@ -473,13 +488,12 @@ class ContextNetSupervisor(GanSupervisor):
 
 
 class BiGanSupervisor(GanSupervisor):
-    def __init__(self, dataset=None, shape=(32, 8, 8), rand_gen=np.random.rand,
+    def __init__(self, dataset=None, shape=(32, 7, 7), rand_gen=np.random.rand,
                  backbone=None, predictor=None, discriminator=None, loss=nn.MSELoss(reduction='mean'), fake_loss=nn.MSELoss(reduction='mean')):
         """BiGan Supervisor https://arxiv.org/pdf/1605.09782.pdf.
-
         Args:
             dataset (torch.utils.data.Dataset): The dataset to train on.
-            shape (tuple, optional): Latent vector shape. Defaults to (32, 8, 8).
+            shape (tuple, optional): Latent vector shape. Defaults to (32, 7, 7).
             rand_gen (np.random, optional): Random noise distribution. Defaults to np.random.rand.
             backbone (torch.nn.Module, optional): Backbone network. Defaults to None, resulting in an EfficientNet backbone.
             predictor (torch.nn.Module, optional): Prediction network. Defaults to None, resulting in a standard upsampling ConvNet.
@@ -498,6 +512,9 @@ class BiGanSupervisor(GanSupervisor):
                              dataset, shape=shape, rand_gen=rand_gen),
                          loss,
                          fake_loss)
+
+        self.model = self.model.module
+        self.discriminator = self.discriminator.module
 
     def supervise(self, lr=1e-3, optimizer=torch.optim.Adam, epochs=10, batch_size=32, shuffle=True,
                   num_workers=0, name="store/base", pretrained=False, collate_fn=None, lr_scheduler=lambda optimizer: torch.optim.lr_scheduler.StepLR(optimizer, step_size=100, gamma=1.0)):
@@ -570,7 +587,7 @@ class BiGanSupervisor(GanSupervisor):
 
 
 class ContrastivePredictiveCodingSupervisor(Supervisor):
-    def __init__(self, dataset=None, embedding_size=128, half_crop_size=(int(28), int(28)), sides=['top', 'bottom', 'left', 'right'],
+    def __init__(self, dataset=None, embedding_size=128, half_crop_size=(int(28), int(28)), sides=['top', 'bottom', 'left', 'right'], bottleneck_resolution = (7,7),
                  backbone=None, predictor=None, loss=CPCLoss(k=3, ignore=2).to('cuda')):
         """Contrastive Predictive Coding v2 for future prediction https://arxiv.org/pdf/1905.09272.pdf.
 
@@ -579,32 +596,33 @@ class ContrastivePredictiveCodingSupervisor(Supervisor):
             embedding_size (int, optional): Size of predicted embeddings. Defaults to 128.
             half_crop_size (tuple, optional): Half size of crops to predict. Defaults to (int(28), int(28)).
             sides (list, optional): From which sides to generate context. Defaults to ['top', 'bottom', 'left', 'right'].
+            bottleneck_resolution ((int, int), optional): Determines the 2D shape of the bottleneck. Defaults to (7,7).
             backbone (torch.nn.Module, optional): Backbone network. Defaults to None, resulting in an EfficientNet backbone with LayerNorm.
             predictor (torch.nn.Module, optional): Prediction network. Defaults to None, resulting in a MaskedCNN and a linear predictor for each side.
             loss (torch.nn.Module, optional): The critierion to train on. Defaults to CPCLoss(k=3, ignore=2), a specific CPC loss for efficient calculation.
         """
-        super().__init__(CombinedNet(Batch2Image(EfficientFeatures(norm_type='layer'))
+        super().__init__(CombinedNet(ReshapeChannels(EfficientFeatures(norm_type='layer'), flat=False)
                                      if backbone is None else backbone,
                                      nn.ModuleDict({side: ReshapeChannels(MaskedCNN(
-                                         layers=[1280, 512, 256, 128, embedding_size], mask=torch.from_numpy(np.array([[1, 1, 1], [1, 1, 1], [0, 0, 0]])),  side=side),
+                                         layers=[64, 256, 256, 128, embedding_size], mask=torch.from_numpy(np.array([[1, 1, 1], [1, 1, 1], [0, 0, 0]])),  side=side),
                                          in_channels=128, out_channels=64 * loss.k, kernel_size=1, padding=0, activation=nn.Identity, flat=False) for side in sides})
                                      if predictor is None else predictor),
                          ContrastivePreditiveCodingDataset(
                              dataset, half_crop_size=half_crop_size),
                          loss,
                          batched_collate)
+        self.batch2image = nn.DataParallel(Batch2Image(bottleneck_resolution))
+        self.backbone_para = nn.DataParallel(self.get_backbone())
+        self.predictor_para = nn.ModuleDict({side: nn.DataParallel(self.get_predictor()[side]) for side in sides})
         self.sides = sides
 
     def _forward(self, data):
         inputs, _ = data
-        encodings = self.get_backbone()(inputs.to('cuda'))
-        # encodings = F.layer_norm(encodings.permute(
-        #    0, 2, 3, 1), encodings.shape[1:2]).permute(0, 3, 1, 2)
-        # predictions = F.layer_norm(predictions.permute(
-        #    0, 2, 3, 1), predictions.shape[1:2]).permute(0, 3, 1, 2)
+        encodings = self.backbone_para(inputs.to('cuda'))
+        encodings = self.batch2image(encodings)
         loss = 0
         for side in self.sides:
-            predictions = self.get_predictor()[side](encodings)
+            predictions = self.predictor_para[side](encodings)
             if side == 'top':
                 encodings_a = encodings
             elif side == 'bottom':
@@ -736,11 +754,13 @@ class BYOLSupervisor(Supervisor):
                          loss)
         self.embedding_size = embedding_size
         self.m = m
-        self.model_k = copy.deepcopy(self.model)
 
     def _epochs(self, epochs, train_loader, optimizer, lr_scheduler):
         tkb = tqdm(total=int(len(train_loader)), bar_format="{l_bar}%s{bar}%s{r_bar}" % (
             Fore.GREEN, Fore.RESET), mininterval=0)
+            
+        self.model_k = copy.deepcopy(self.model)
+        self.model_k.module.predictor.up_to = 0
 
         for param in self.model_k.parameters():
             param.requries_grad=False
@@ -774,24 +794,22 @@ class BYOLSupervisor(Supervisor):
 
         q = self.model(imgs1.to('cuda'))
         with torch.no_grad():
-            k = self.model_k.module.predictor(
-                self.model_k.module.backbone(imgs2.to('cuda')), up_to=0)
+            k = self.model_k(imgs2.to('cuda'))
             k = F.normalize(k)
         q = F.normalize(q)
 
         l_pos_1 = torch.bmm(q.view(q.shape[0], 1, q.shape[1]), k.view(
             k.shape[0], k.shape[1], 1)).squeeze().mean()
 
-        """
+        
         q = self.model(imgs2.to('cuda'))
         with torch.no_grad():
-            k = self.model_k.module.predictor(
-                self.model_k.module.backbone(imgs1.to('cuda')), up_to=0)
+            k = self.model_k(imgs1.to('cuda'))
             k = F.normalize(k)
         q = F.normalize(q)
-        """
-        l_pos_2 = 0 # torch.bmm(q.view(q.shape[0], 1, q.shape[1]), k.view(
-            #k.shape[0], k.shape[1], 1)).squeeze().mean()
+        
+        l_pos_2 = torch.bmm(q.view(q.shape[0], 1, q.shape[1]), k.view(
+            k.shape[0], k.shape[1], 1)).squeeze().mean()
 
         loss = - 2 * (l_pos_1 + l_pos_2)
         return loss
@@ -897,15 +915,13 @@ class ContrastiveMultiviewCodingSupervisor(Supervisor):
         self.embedding_size = embedding_size
         self.n = n
         self.t = t
-        self.memory_m = memory_m
+        self.memory = BatchedMemory(size=len(self.dataset),
+                               embedding_size=self.embedding_size, momentum=memory_m)
 
     def _epochs(self, epochs, train_loader, optimizer, lr_scheduler):
-        batch_size = train_loader.batch_size
         # Init queue
-        memory = BatchedMemory(size=len(self.dataset), batch_size=batch_size,
-                               embedding_size=self.embedding_size, momentum=self.memory_m)
-        self.model_k = CombinedNet(nn.Sequential(nn.Conv2d(2, 3, 1), ReshapeChannels(EfficientFeatures())),
-                                   Classification(layers=[3136, 1024, 1024, self.embedding_size])).to('cuda')
+        self.model_k = nn.DataParallel(CombinedNet(nn.Sequential(nn.Conv2d(2, 3, 1), ReshapeChannels(EfficientFeatures())),
+                                   Classification(layers=[3136, 1024, 1024, self.embedding_size])).to('cuda'))
         for epoch_id in range(epochs):
             loss_sum = 0
             tkb = tqdm(total=int(len(train_loader)), bar_format="{l_bar}%s{bar}%s{r_bar}" % (
@@ -915,7 +931,7 @@ class ContrastiveMultiviewCodingSupervisor(Supervisor):
                     continue
                 optimizer.zero_grad()
 
-                loss = self._forward(data, memory)
+                loss = self._forward(data)
 
                 loss_sum += loss.item()
                 tkb.set_postfix(loss='{:3f}'.format(
@@ -925,7 +941,7 @@ class ContrastiveMultiviewCodingSupervisor(Supervisor):
                 self._update(loss=loss, optimizer=optimizer,
                              lr_scheduler=lr_scheduler)
 
-    def _forward(self, data, memory):
+    def _forward(self, data):
         imgs1_l, imgs1_ab, imgs2_l, imgs2_ab, idx = data
         batch_size = imgs1_l.shape[0]
 
@@ -937,8 +953,8 @@ class ContrastiveMultiviewCodingSupervisor(Supervisor):
 
         l_pos1 = torch.bmm(q1.view(q1.shape[0], 1, q1.shape[1]), k1.view(
             k1.shape[0], k1.shape[1], 1)).squeeze(1) / self.t
-        l_neg1 = torch.bmm(q1.view(q1.shape[0], 1, q1.shape[1]), memory.data(
-            self.n).permute(0, 2, 1)).squeeze(1) / self.t
+        l_neg1 = torch.bmm(q1.view(q1.shape[0], 1, q1.shape[1]), self.memory.data(
+            self.n, batch_size).permute(0, 2, 1)).squeeze(1) / self.t
         logits1 = torch.cat([l_pos1, l_neg1], dim=1)
 
         # The other
@@ -949,8 +965,8 @@ class ContrastiveMultiviewCodingSupervisor(Supervisor):
 
         l_pos2 = torch.bmm(q2.view(q2.shape[0], 1, q2.shape[1]), k2.view(
             k2.shape[0], k2.shape[1], 1)).squeeze(1) / self.t
-        l_neg2 = torch.bmm(q2.view(q1.shape[0], 1, q2.shape[1]), memory.data(
-            self.n).permute(0, 2, 1)).squeeze(1) / self.t
+        l_neg2 = torch.bmm(q2.view(q1.shape[0], 1, q2.shape[1]), self.memory.data(
+            self.n, batch_size).permute(0, 2, 1)).squeeze(1) / self.t
         logits2 = torch.cat([l_pos2, l_neg2], dim=1)
 
         logits = torch.cat((logits1, logits2), dim=0)
@@ -958,7 +974,7 @@ class ContrastiveMultiviewCodingSupervisor(Supervisor):
         loss = self.loss(logits, labels)
 
         with torch.no_grad():
-            memory.update(k1, idx)
+            self.memory.update(k1, idx)
 
         return loss
 
@@ -989,14 +1005,12 @@ class PIRLSupervisor(Supervisor):
         self.embedding_size = embedding_size
         self.n = n
         self.t = t
-        self.memory_m = memory_m
+        self.memory = BatchedMemory(size=len(self.dataset),
+                               embedding_size=self.embedding_size, momentum=memory_m)
 
     def _epochs(self, epochs, train_loader, optimizer, lr_scheduler):
-        batch_size = train_loader.batch_size
         # Init queue
-        memory = BatchedMemory(size=len(self.dataset), batch_size=batch_size,
-                               embedding_size=self.embedding_size, momentum=self.memory_m)
-        self.g_head = copy.deepcopy(self.model.predictor).to('cuda')
+        self.g_head = nn.DataParallel(CombinedNet(self.model.module.backbone, copy.deepcopy(self.model.module.predictor)))
 
         for epoch_id in range(epochs):
             loss_sum = 0
@@ -1007,7 +1021,7 @@ class PIRLSupervisor(Supervisor):
                     continue
                 optimizer.zero_grad()
 
-                loss = self._forward(data, memory)
+                loss = self._forward(data,)
 
                 loss_sum += loss.item()
 
@@ -1018,30 +1032,30 @@ class PIRLSupervisor(Supervisor):
                 self._update(loss=loss, optimizer=optimizer,
                              lr_scheduler=lr_scheduler)
 
-    def _forward(self, data, memory):
+    def _forward(self, data):
         imgs1, imgs2, idx = data
         batch_size = imgs1.shape[0]
 
         f = self.model(imgs1.to('cuda'))
-        g = self.g_head(self.model.backbone(imgs2.to('cuda')))
+        g = self.g_head(imgs2.to('cuda'))
         f = F.normalize(f)
         g = F.normalize(g)
 
-        k = memory[idx]
+        k = self.memory[idx]
 
         # f
         l_pos = torch.bmm(f.view(f.shape[0], 1, f.shape[1]), k.view(
             k.shape[0], k.shape[1], 1)).squeeze(1) / self.t
-        l_neg = torch.bmm(f.view(f.shape[0], 1, f.shape[1]), memory.data(
-            self.n).permute(0, 2, 1)).squeeze(1) / self.t
+        l_neg = torch.bmm(f.view(f.shape[0], 1, f.shape[1]), self.memory.data(
+            self.n, batch_size).permute(0, 2, 1)).squeeze(1) / self.t
 
         logits_f = torch.cat([l_pos, l_neg], dim=1)
 
         # g
         l_pos = torch.bmm(g.view(g.shape[0], 1, g.shape[1]), k.view(
             k.shape[0], k.shape[1], 1)).squeeze(1) / self.t
-        l_neg = torch.bmm(g.view(g.shape[0], 1, g.shape[1]), memory.data(
-            self.n).permute(0, 2, 1)).squeeze(1) / self.t
+        l_neg = torch.bmm(g.view(g.shape[0], 1, g.shape[1]), self.memory.data(
+            self.n, batch_size).permute(0, 2, 1)).squeeze(1) / self.t
 
         logits_g = torch.cat([l_pos, l_neg], dim=1)
 
@@ -1050,6 +1064,6 @@ class PIRLSupervisor(Supervisor):
         loss = self.loss(logits, labels)
 
         with torch.no_grad():
-            memory.update(f, idx)
+            self.memory.update(f, idx)
 
         return loss
