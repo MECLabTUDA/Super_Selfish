@@ -450,7 +450,7 @@ class SplitBrainNetSupervisor(Supervisor):
         super().__init__(CombinedNet(GroupedEfficientFeatures()
                                      if backbone is None else backbone,
                                      GroupedUpsampling(
-                                         layers=[640, 512, 256, 128, 64])
+                                         layers=[32, 256, 256, 128, 64])
                                      if predictor is None else predictor),
                          SplitBrainDataset(dataset, l_step=l_step, l_offset=l_offset - 1,
                                            ab_step=ab_step, a_offset=a_offset, b_offset=b_offset),

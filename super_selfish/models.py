@@ -458,15 +458,22 @@ class EfficientFeatures(nn.Module):
 
 
 class GroupedEfficientFeatures(nn.Module):
-    def __init__(self, name='efficientnet-b0', pretrained=False, groups=np.array([1, 2]), norm_type='batch'):
+    def __init__(self, name='efficientnet-b0', pretrained=False, groups=np.array([1, 2]), norm_type='batch', channels_per_group = 32):
         """Wrapps grouped EfficientNet with groups of varying size. Same parameters as EffcientFeatures but groups.
         Args:
             groups ([int], optional): Number of channels per group. Defaults to np.array([50, 100]).
+
+        Args:
+            name (str, optional): EfficientNet type. Defaults to 'efficientnet-b0'.
+            pretrained (bool, optional): Wether to load pretrained weights. Defaults to False.
+            norm_type (str, optional): ADDED FROM Super Selfish, decide between 'batch' and 'layer'. Defaults to 'batch'.
+            groups ([type], optional): Group split. Defaults to np.array([1, 2]).
+            channels_per_group (int, optional): Out channels per group. Defaults to 32.
         """
         super().__init__()
         print(bcolors.OKBLUE, end="")
         self.groups = groups
-        channels_per_group = 1280 // len(groups)
+        channels_per_group = channels_per_group
         self.cum_groups = np.concatenate((
             np.zeros(1), np.cumsum(groups).astype(float))).astype(int)
         if pretrained:
