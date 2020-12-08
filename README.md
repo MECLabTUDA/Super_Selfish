@@ -1,7 +1,7 @@
 # Super Selfish
 A unified Pytorch framework for image-based self-supervised learning. The technical report can be found at https://arxiv.org/abs/2012.02706.
 
-If you use this framework in one of your frameworks please consider to cite 
+If you use this framework in one of your projects please consider to cite 
 
 ```
 @misc{wagner2020superselfish,
