@@ -1,5 +1,19 @@
 # Super Selfish
-A unified Pytorch framework for image-based self-supervised learning.
+A unified Pytorch framework for image-based self-supervised learning. The technical report can be found at https://arxiv.org/abs/2012.02706.
+
+If you use this framework in one of your frameworks please consider to cite 
+
+```
+@misc{wagner2020superselfish,
+      title={Super-Selfish: Self-Supervised Learning on Images with PyTorch}, 
+      author={Nicolas Wagner and Anirban Mukhopadhyay},
+      year={2020},
+      eprint={2012.02706},
+      archivePrefix={arXiv},
+      primaryClass={cs.CV}
+}
+```
+
 
 ## Algorithms
 Currently support of 13 algorithms that can be run in parallel on one node of GPUs:
