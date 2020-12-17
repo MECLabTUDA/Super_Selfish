@@ -150,7 +150,8 @@ def _update(self, loss, optimizer, lr_scheduler)
 - We use an EfficientNet https://github.com/lukemelas/EfficientNet-PyTorch implementation as the defaul backbone/feature extractor. We use a customized version that can be switched from batch norm to layer norm.
 - Please feel free to open an issue regarding bugs and/or other algorithms that should be added.
 
-## TODOs
+## Will be added next:
+- Refactor data augmentation for easier adaption
 - Multi node support, ShuffledBN
 - Refactor old datasets, GANSupervisor
 - Polyak Averaging
