@@ -14,6 +14,9 @@ If you use this framework in one of your projects please consider to cite
 }
 ```
 
+## Change Log
+ - v0.0.6 You can now easily change image augmentations for MoCo, BYOL, Instance Discrimination, Contrast View Multicoding, and PIRL by specifying data_augmentation=lambda dataset : dataset in the supervisor constructor.
+
 
 ## Algorithms
 Currently support of 13 algorithms that can be run in parallel on one node of GPUs:
