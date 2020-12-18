@@ -18,12 +18,12 @@ from super_selfish.data import LDataset
 # Configuration
 # +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 # Choose supervisor
-supervisor_name = 'splitbrain'
+supervisor_name = 'discrimination'
 lr = 1e-2
-epochs = 1
+epochs = 2
 batch_size = 32
 device = 'cuda'
-clean = True
+clean = False
 
 # ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 

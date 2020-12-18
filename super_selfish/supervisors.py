@@ -644,12 +644,13 @@ class ContrastivePredictiveCodingSupervisor(Supervisor):
 
 
 class MomentumContrastSupervisor(Supervisor):
-    def __init__(self, dataset=None, embedding_size=128, K=8, m=0.999,  t=0.2,
+    def __init__(self, dataset=None, data_augmentation=lambda dataset : AugmentationDataset(dataset, transformations=MomentumContrastAugmentations), embedding_size=128, K=8, m=0.999,  t=0.2,
                  backbone=None, predictor=None, loss=nn.CrossEntropyLoss(reduction='mean')):
         """Momentum contrast v2 https://arxiv.org/pdf/2003.04297.pdf.
 
         Args:
             dataset (torch.utils.data.Dataset): The dataset to train on.
+            data_augmentation (lambda dataset: dataset, optional): Lambda function that returns a dataset with augmentations. Defaults to lambda dataset : AugmentationDataset(dataset, transformations=MomentumContrastAugmentations).
             embedding_size (int, optional): Size of predicted embeddings. Defaults to 128.
             K (int, optional): Size of queue in batches. Defaults to 8.
             m (float, optional): Momentum encoder weighting parameter. Defaults to 0.999.
@@ -663,8 +664,7 @@ class MomentumContrastSupervisor(Supervisor):
                                      Classification(
                                          layers=[3136, 1024, 1024, embedding_size])
                                      if predictor is None else predictor),
-                         AugmentationDataset(
-                             dataset, transformations=MomentumContrastAugmentations),
+                         data_augmentation(dataset),
                          loss)
         self.embedding_size = embedding_size
         self.K = K
@@ -672,6 +672,9 @@ class MomentumContrastSupervisor(Supervisor):
         self.t = t
 
     def _epochs(self, epochs, train_loader, optimizer, lr_scheduler):
+        tkb = tqdm(total=int(len(train_loader)), bar_format="{l_bar}%s{bar}%s{r_bar}" % (
+            Fore.GREEN, Fore.RESET), mininterval=0)
+
         batch_size = train_loader.batch_size
         self.model_k = copy.deepcopy(self.model)
         # Init queue
@@ -683,8 +686,7 @@ class MomentumContrastSupervisor(Supervisor):
 
         for epoch_id in range(epochs):
             loss_sum = 0
-            tkb = tqdm(total=int(len(train_loader)), bar_format="{l_bar}%s{bar}%s{r_bar}" % (
-                Fore.GREEN, Fore.RESET), desc="Batch Process Epoch " + str(epoch_id))
+            tkb.set_description(desc="Batch Process Epoch " + str(epoch_id))
             for batch_id, data in enumerate(train_loader):
                 if data[0].shape[0] != train_loader.batch_size:
                     continue
@@ -704,6 +706,7 @@ class MomentumContrastSupervisor(Supervisor):
                     for param_q, param_k in zip(self.model.parameters(), self.model_k.parameters()):
                         param_k.data = param_k.data * self.m + \
                             param_q.data * (1. - self.m)
+            tkb.reset()
 
     def _forward(self, data, queue):
         imgs1, imgs2 = data
@@ -732,12 +735,13 @@ class MomentumContrastSupervisor(Supervisor):
 
 
 class BYOLSupervisor(Supervisor):
-    def __init__(self, dataset=None, embedding_size=128, m=0.999,
+    def __init__(self, dataset=None, data_augmentation=lambda dataset : AugmentationDataset(dataset, transformations=BYOLAugmentations), embedding_size=128, m=0.999,
                  backbone=None, predictor=None, loss=nn.CrossEntropyLoss(reduction='mean')):
         """Bootstrap your own latent https://arxiv.org/pdf/2006.07733.pdf.
 
         Args:
             dataset (torch.utils.data.Dataset): The dataset to train on.
+            data_augmentation (lambda dataset: dataset, optional): Lambda function that returns a dataset with augmentations. Defaults to lambda dataset : AugmentationDataset(dataset, transformations=BYOLAugmentations).
             embedding_size (int, optional): Size of predicted embeddings. Defaults to 128.
             m (float, optional): Momentum encoder weighting parameter. Defaults to 0.999.
             backbone (torch.nn.Module, optional): Backbone network. Defaults to None, resulting in an EfficientNet backbone.
@@ -749,8 +753,7 @@ class BYOLSupervisor(Supervisor):
                                      SequentialUpTo(Classification(layers=[3136, 1024, 1024, embedding_size]), Classification(
                                          layers=[embedding_size, embedding_size * 4, embedding_size * 2, embedding_size]))
                                      if predictor is None else predictor),
-                         AugmentationDataset(
-                             dataset, transformations=BYOLAugmentations),
+                         data_augmentation(dataset),
                          loss)
         self.embedding_size = embedding_size
         self.m = m
@@ -816,12 +819,13 @@ class BYOLSupervisor(Supervisor):
 
 
 class InstanceDiscriminationSupervisor(Supervisor):
-    def __init__(self, dataset=None, embedding_size=128, n=500, t=0.07,
+    def __init__(self, dataset=None, data_augmentation=lambda dataset : AugmentationIndexedDataset(dataset, transformations=ContrastivePredictiveCodingAugmentations), embedding_size=128, n=500, t=0.07,
                  backbone=None, predictor=None, loss=nn.CrossEntropyLoss(reduction='mean')):
         """Instance Discrimination https://arxiv.org/pdf/1805.01978.pdf.
 
         Args:
             dataset (torch.utils.data.Dataset): The dataset to train on.
+            data_augmentation (lambda dataset: dataset, optional): Lambda function that returns a dataset with augmentations. Defaults to lambda dataset : AugmentationIndexedDataset(dataset, transformations=ContrastivePredictiveCodingAugmentations).
             embedding_size (int, optional): Size of predicted embeddings. Defaults to 128.
             n (int, optional): Number of negative examples per instance. Defaults to 500.
             t (float, optional): Temperature. Defaults to 0.07.
@@ -834,8 +838,7 @@ class InstanceDiscriminationSupervisor(Supervisor):
                                      Classification(
                                          layers=[3136, 1024, 1024, embedding_size])
                                      if predictor is None else predictor),
-                         AugmentationIndexedDataset(
-                             dataset, transformations=ContrastivePredictiveCodingAugmentations),
+                         data_augmentation(dataset),
                          loss)
         self.embedding_size = embedding_size
         self.n = n
@@ -890,12 +893,13 @@ class InstanceDiscriminationSupervisor(Supervisor):
 
 
 class ContrastiveMultiviewCodingSupervisor(Supervisor):
-    def __init__(self, dataset=None, embedding_size=128, n=3136, t=0.07, memory_m=0.5,
+    def __init__(self, dataset=None,  data_augmentation=lambda dataset : AugmentationLabIndexedDataset(dataset, transformations=ContrastivePredictiveCodingAugmentations), embedding_size=128, n=3136, t=0.07, memory_m=0.5,
                  backbone=None, predictor=None, loss=nn.CrossEntropyLoss(reduction='mean')):
         """Contrastive Multiview Coding https://arxiv.org/pdf/1906.05849.pdf.
 
         Args:
             dataset (torch.utils.data.Dataset): The dataset to train on.
+            data_augmentation (lambda dataset: dataset, optional): Lambda function that returns a dataset with augmentations. Defaults to lambda dataset : AugmentationLabIndexedDataset(dataset, transformations=ContrastivePredictiveCodingAugmentations).
             embedding_size (int, optional): Size of predicted embeddings. Defaults to 128.
             n (int, optional): Number of negatives. Defaults to 3136.
             t (float, optional): Temperature. Defaults to 0.07.
@@ -909,8 +913,7 @@ class ContrastiveMultiviewCodingSupervisor(Supervisor):
                                      Classification(
                                          layers=[3136, 1024, 1024, embedding_size])
                                      if predictor is None else predictor),
-                         AugmentationLabIndexedDataset(
-                             dataset, transformations=ContrastivePredictiveCodingAugmentations),
+                         data_augmentation(dataset),
                          loss)
         self.embedding_size = embedding_size
         self.n = n
@@ -919,13 +922,14 @@ class ContrastiveMultiviewCodingSupervisor(Supervisor):
                                embedding_size=self.embedding_size, momentum=memory_m)
 
     def _epochs(self, epochs, train_loader, optimizer, lr_scheduler):
+        tkb = tqdm(total=int(len(train_loader)), bar_format="{l_bar}%s{bar}%s{r_bar}" % (
+            Fore.GREEN, Fore.RESET), mininterval=0)
         # Init queue
         self.model_k = nn.DataParallel(CombinedNet(nn.Sequential(nn.Conv2d(2, 3, 1), ReshapeChannels(EfficientFeatures())),
                                    Classification(layers=[3136, 1024, 1024, self.embedding_size])).to('cuda'))
         for epoch_id in range(epochs):
             loss_sum = 0
-            tkb = tqdm(total=int(len(train_loader)), bar_format="{l_bar}%s{bar}%s{r_bar}" % (
-                Fore.GREEN, Fore.RESET), desc="Batch Process Epoch " + str(epoch_id))
+            tkb.set_description(desc="Batch Process Epoch " + str(epoch_id))
             for batch_id, data in enumerate(train_loader):
                 if data[0].shape[0] != train_loader.batch_size:
                     continue
@@ -940,6 +944,7 @@ class ContrastiveMultiviewCodingSupervisor(Supervisor):
 
                 self._update(loss=loss, optimizer=optimizer,
                              lr_scheduler=lr_scheduler)
+            tkb.reset()
 
     def _forward(self, data):
         imgs1_l, imgs1_ab, imgs2_l, imgs2_ab, idx = data
@@ -980,12 +985,13 @@ class ContrastiveMultiviewCodingSupervisor(Supervisor):
 
 
 class PIRLSupervisor(Supervisor):
-    def __init__(self, dataset=None, embedding_size=128, n=3136, t=0.07, memory_m=0.5,
+    def __init__(self, dataset=None, data_augmentation=lambda dataset : AugmentationIndexedDataset(dataset, transformations=ContrastivePredictiveCodingAugmentations, transformations2=PIRLAugmentations), embedding_size=128, n=3136, t=0.07, memory_m=0.5,
                  backbone=None, predictor=None, loss=nn.CrossEntropyLoss(reduction='mean')):
         """PIRL https://arxiv.org/abs/1912.01991.
 
         Args:
             dataset (torch.utils.data.Dataset): The dataset to train on.
+            data_augmentation (lambda dataset: dataset, optional): Lambda function that returns a dataset with augmentations. Defaults to lambda dataset : AugmentationIndexedDataset(dataset, transformations=ContrastivePredictiveCodingAugmentations, transformations2=PIRLAugmentations).
             embedding_size (int, optional): Size of predicted embeddings. Defaults to 128.
             n (int, optional): Number of negatives. Defaults to 3136.
             t (float, optional): Temperature. Defaults to 0.07.
@@ -999,8 +1005,7 @@ class PIRLSupervisor(Supervisor):
                                      Classification(
                                          layers=[3136, 1024, 1024, embedding_size])
                                      if predictor is None else predictor),
-                         AugmentationIndexedDataset(
-                             dataset, transformations=ContrastivePredictiveCodingAugmentations, transformations2=PIRLAugmentations),
+                         data_augmentation(dataset),
                          loss)
         self.embedding_size = embedding_size
         self.n = n
@@ -1009,13 +1014,14 @@ class PIRLSupervisor(Supervisor):
                                embedding_size=self.embedding_size, momentum=memory_m)
 
     def _epochs(self, epochs, train_loader, optimizer, lr_scheduler):
+        tkb = tqdm(total=int(len(train_loader)), bar_format="{l_bar}%s{bar}%s{r_bar}" % (
+            Fore.GREEN, Fore.RESET), mininterval=0)
         # Init queue
         self.g_head = nn.DataParallel(CombinedNet(self.model.module.backbone, copy.deepcopy(self.model.module.predictor)))
 
         for epoch_id in range(epochs):
             loss_sum = 0
-            tkb = tqdm(total=int(len(train_loader)), bar_format="{l_bar}%s{bar}%s{r_bar}" % (
-                Fore.GREEN, Fore.RESET), desc="Batch Process Epoch " + str(epoch_id))
+            tkb.set_description(desc="Batch Process Epoch " + str(epoch_id))
             for batch_id, data in enumerate(train_loader):
                 if data[0].shape[0] != train_loader.batch_size:
                     continue
@@ -1031,6 +1037,7 @@ class PIRLSupervisor(Supervisor):
 
                 self._update(loss=loss, optimizer=optimizer,
                              lr_scheduler=lr_scheduler)
+            tkb.reset()
 
     def _forward(self, data):
         imgs1, imgs2, idx = data
