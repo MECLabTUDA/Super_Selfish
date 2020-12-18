@@ -143,7 +143,6 @@ def _forward(self, data)
 # Takes care of updating the modle, lr scheduler, ...
 def _update(self, loss, optimizer, lr_scheduler)
 ```
-The full documentation is available at: TODO
 
 ## Remarks
 - Super Selfish is constructed to work out of the box on 225x225 images but can be adapted to other resolutions with minor effort. An adaptive design is to follow soon.
@@ -151,7 +150,8 @@ The full documentation is available at: TODO
 - We use an EfficientNet https://github.com/lukemelas/EfficientNet-PyTorch implementation as the defaul backbone/feature extractor. We use a customized version that can be switched from batch norm to layer norm.
 - Please feel free to open an issue regarding bugs and/or other algorithms that should be added.
 
-## TODOs
+## Will be added next:
+- Refactor data augmentation for easier adaption
 - Multi node support, ShuffledBN
 - Refactor old datasets, GANSupervisor
 - Polyak Averaging

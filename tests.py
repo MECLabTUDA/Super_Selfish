@@ -18,7 +18,7 @@ from super_selfish.data import LDataset
 # Configuration
 # +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 # Choose supervisor
-supervisor_name = 'discrimination'
+supervisor_name = 'pirl'
 lr = 1e-2
 epochs = 2
 batch_size = 32
