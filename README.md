@@ -154,7 +154,6 @@ def _update(self, loss, optimizer, lr_scheduler)
 - Please feel free to open an issue regarding bugs and/or other algorithms that should be added.
 
 ## Will be added next:
-- Refactor data augmentation for easier adaption
 - Multi node support, ShuffledBN
 - Refactor old datasets, GANSupervisor
 - Polyak Averaging
